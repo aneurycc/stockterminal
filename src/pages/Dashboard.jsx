@@ -50,6 +50,7 @@ const Dashboard = ({ onLogout }) => {
   const [newItemArea, setNewItemArea] = useState(AREAS_GENERAL[0]);
   const [newItemQuantity, setNewItemQuantity] = useState(1);
 
+  const [editNewImage, setEditNewImage] = useState(null);
   const [editingId, setEditingId] = useState(null);
   const [editFormData, setEditFormData] = useState({});
   const [itemToDelete, setItemToDelete] = useState(null);
@@ -185,6 +186,7 @@ const Dashboard = ({ onLogout }) => {
     }
     setEditingId(item.id);
     setEditFormData({ ...item });
+    setEditNewImage(null);
   };
   
   const handleCancelEdit = () => {
@@ -193,6 +195,7 @@ const Dashboard = ({ onLogout }) => {
       setInventory(inventory.filter(i => i.id !== editingId));
     }
     setEditingId(null);
+    setEditNewImage(null);
   };
   
   const handleSaveEdit = (id) => {
@@ -224,11 +227,24 @@ const Dashboard = ({ onLogout }) => {
 
     if (qtyDelta > 0 && !original.isDraft) {
       // ERP Splitting Logic
+      
+      let parentImages = original.images || [];
+      if (original.image && !parentImages.find(img => img.data === original.image)) {
+        parentImages = [{ data: original.image, status: original.status, date: 'Registro Original' }];
+      }
+      
       const parentRemain = {
         ...original,
         quantity: qtyDelta,
+        images: parentImages.length > 0 ? parentImages : undefined,
         history: [...(original.history || []), `[${now}] Fraccionamiento: ${parsedQty} unidad(es) extraídas y asignadas como "${editFormData.status}". Restan ${qtyDelta}.`]
       };
+
+      
+      let childImages = parentImages.map(img => ({...img})); // clone
+      if (editNewImage) {
+        childImages.push({ data: editNewImage, status: editFormData.status, date: now });
+      }
 
       const childSpawn = {
         ...editFormData,
@@ -237,6 +253,8 @@ const Dashboard = ({ onLogout }) => {
         id: Date.now(),
         name: editFormData.name.trim(),
         quantity: parsedQty,
+        image: editNewImage || original.image,
+        images: childImages.length > 0 ? childImages : undefined,
         history: [...(original.history || []), `[${now}] Creado por fraccionamiento de lote original (Cant: ${parsedQty}).`]
       };
       
@@ -245,12 +263,24 @@ const Dashboard = ({ onLogout }) => {
     } else {
       if (qtyDelta < 0 && !original.isDraft) historyLog += `Cantidad incrementada de ${original.quantity} a ${parsedQty}.`;
       
+      
+      let imagesArray = original.images || [];
+      if (original.image && !imagesArray.find(img => img.data === original.image)) {
+        imagesArray = [{ data: original.image, status: original.status, date: 'Registro Original' }];
+      }
+      if (editNewImage) {
+        imagesArray = [...imagesArray, { data: editNewImage, status: editFormData.status, date: now }];
+        historyLog += '[Nueva Foto Adjunta] ';
+      }
+
       const updated = {
         ...editFormData,
         owner: newOwner,
         area: finalArea,
         name: editFormData.name.trim(),
         quantity: parsedQty,
+        image: editNewImage || original.image,
+        images: imagesArray.length > 0 ? imagesArray : undefined,
         history: [...(original.history || []), historyLog]
       };
       
@@ -475,13 +505,27 @@ const Dashboard = ({ onLogout }) => {
                     {editingId === item.id ? (
                       <>
                         <td style={{ padding: '8px' }}>
-                          <input 
-                            type="text" 
-                            list={(editFormData.name === item.name || editFormData.name === '') ? "equipment-names-edit" : undefined} 
-                            value={editFormData.name} 
-                            onChange={(e) => handleEditFormChange(e, 'name')} 
-                            style={{ width: '100%', padding: '4px' }} 
-                          />
+                          <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
+                            <label style={{ cursor: 'pointer', padding: '4px 8px', background: 'var(--q-secondary)', borderRadius: '4px', fontSize: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Adjuntar nueva foto para este estado">
+                              📷
+                              <input type="file" accept="image/*" style={{ display: 'none' }} onChange={async (e) => {
+                                 const f = e.target.files[0];
+                                 if (f) {
+                                   try {
+                                     setEditNewImage(await compressImage(f));
+                                   } catch(err){ alert("Error"); }
+                                 }
+                              }} />
+                            </label>
+                            {editNewImage && <span style={{ color: 'var(--q-positive)', fontSize: '12px' }}>✓ Foto Lista</span>}
+                            <input 
+                              type="text" 
+                              list={(editFormData.name === item.name || editFormData.name === '') ? "equipment-names-edit" : undefined} 
+                              value={editFormData.name} 
+                              onChange={(e) => handleEditFormChange(e, 'name')} 
+                              style={{ width: '100%', padding: '4px' }} 
+                            />
+                          </div>
                           <datalist id="equipment-names-edit">{typeSuggestions.map(t => <option key={t} value={t} />)}</datalist>
                         </td>
                         <td style={{ padding: '8px' }}><input type="number" min="1" max={item.quantity} value={editFormData.quantity} onChange={(e) => handleEditFormChange(e, 'quantity')} style={{ width: '50px', padding: '4px' }} title={`Fraccionar lote. Original: ${item.quantity}`} /></td>
@@ -516,10 +560,11 @@ const Dashboard = ({ onLogout }) => {
                             {item.image && (
                               <div 
                                 className="item-thumbnail-container"
-                                onClick={() => setSelectedImage(item.image)}
+                                onClick={() => setSelectedImage(item)}
                                 title="Ver foto ampliada"
                               >
                                 <img src={item.image} alt="Foto" className="item-thumbnail-img" />
+                                {item.images && item.images.length > 1 && <span style={{position:'absolute', bottom:0, right:0, background:'rgba(0,0,0,0.7)', color:'white', fontSize:'10px', padding:'2px 4px', fontWeight: 'bold'}} >+{item.images.length-1}</span>}
                                 <div className="item-thumbnail-overlay">
                                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
                                 </div>
@@ -787,12 +832,24 @@ const Dashboard = ({ onLogout }) => {
       {/* Modal Visor de Imagen */}
       {selectedImage && (
         <div className="modal-overlay" onClick={() => setSelectedImage(null)}>
-          <div className="modal-content" style={{ width: 'auto', padding: '0' }} onClick={e => e.stopPropagation()}>
-            <img src={selectedImage} alt="Ampliada" style={{ maxWidth: '90vw', maxHeight: '80vh', borderRadius: '4px' }} />
-            <button 
-              onClick={() => setSelectedImage(null)}
-              style={{ position: 'absolute', top: '-15px', right: '-15px', background: '#fff', color: '#333', border: 'none', borderRadius: '50%', width: '30px', height: '30px', fontSize: '16px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 5px rgba(0,0,0,0.2)' }}
-            >✖</button>
+          <div className="modal-content" style={{ padding: '20px', background: 'var(--card-bg)', borderRadius: '8px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '20px', minWidth: '300px' }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center', borderBottom: '1px solid var(--q-secondary)', paddingBottom: '10px' }}>
+              <h3 style={{ margin: 0, color: 'var(--q-dark)' }}>Galería: {selectedImage.name}</h3>
+              <button onClick={() => setSelectedImage(null)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '20px', color: 'var(--text-muted)' }}>✖</button>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              {selectedImage.images ? selectedImage.images.map((img, idx) => (
+                <div key={idx} style={{ border: '1px solid var(--q-secondary)', borderRadius: '6px', padding: '10px', background: 'var(--q-primary)' }}>
+                  <p style={{ margin: '0 0 10px 0', fontSize: '13px', color: 'var(--q-dark)', fontWeight: 'bold' }}>Estado: <span style={{ color: 'var(--q-accent)' }}>{img.status}</span> <span style={{ fontWeight: 'normal', color: 'var(--text-muted)' }}>({img.date})</span></p>
+                  <img src={img.data} alt="Ampliada" style={{ maxWidth: '100%', maxHeight: '60vh', borderRadius: '4px', display: 'block', margin: '0 auto' }} />
+                </div>
+              )) : (
+                <div style={{ border: '1px solid var(--q-secondary)', borderRadius: '6px', padding: '10px', background: 'var(--q-primary)' }}>
+                  <p style={{ margin: '0 0 10px 0', fontSize: '13px', color: 'var(--q-dark)', fontWeight: 'bold' }}>Estado Inicial: <span style={{ color: 'var(--q-accent)' }}>{selectedImage.status}</span></p>
+                  <img src={selectedImage.image} alt="Ampliada" style={{ maxWidth: '100%', maxHeight: '60vh', borderRadius: '4px', display: 'block', margin: '0 auto' }} />
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
