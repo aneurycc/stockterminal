@@ -27,6 +27,7 @@ const Login = ({ onLogin }) => {
   const handleLogin = (e) => {
     e.preventDefault();
     if (username === 'gerente' && password === 'admin123') {
+      localStorage.setItem('gpc_user', username);
       onLogin(true);
       navigate('/dashboard'); 
     } else {

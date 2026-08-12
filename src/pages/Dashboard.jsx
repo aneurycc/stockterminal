@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { Trash2, Clock, Copy, Plus, Moon, Sun, Package } from 'lucide-react';
+import { Trash2, Clock, Copy, Plus, Moon, Sun, Package, Camera, RefreshCw, Activity } from 'lucide-react';
 import { useInventory } from '../hooks/useInventory';
 import KPICards from '../components/KPICards';
 
@@ -19,7 +19,9 @@ const AREAS_B2 = ['ML', 'Oficina TA', 'Oficina TB', 'Oficina TB2'];
 const COLORS = ['#21BA45', '#C10015', '#9E9E9E', '#F2C037', '#FF9800', '#43B02A'];
 
 const Dashboard = ({ onLogout }) => {
-  const { inventory, saveInventory: setInventory, isLoading } = useInventory();
+  const { inventory, saveInventory: setInventory, isLoading, globalLogs, addGlobalLog } = useInventory();
+  const currentUser = localStorage.getItem('gpc_user') || 'Sistema';
+  const [isGlobalLogOpen, setIsGlobalLogOpen] = useState(false);
 
   
   const [filterTerminal, setFilterTerminal] = useState('Todas');
@@ -59,6 +61,12 @@ const Dashboard = ({ onLogout }) => {
   const [historyModalItem, setHistoryModalItem] = useState(null); 
   const [newItemImage, setNewItemImage] = useState(null);
   const [selectedImage, setSelectedImage] = useState(null);
+  const [activePhotoIdx, setActivePhotoIdx] = useState(0);
+
+  const handleOpenGallery = (item) => {
+    setSelectedImage(item);
+    setActivePhotoIdx(0);
+  };
 
   const compressImage = (file) => {
     return new Promise((resolve, reject) => {
@@ -170,6 +178,7 @@ const Dashboard = ({ onLogout }) => {
     };
 
     setInventory([...newInventory, newItem]);
+    addGlobalLog(currentUser, `Creado equipo nuevo: ${newItem.name} (Cant: ${newItem.quantity}, Terminal: ${newItem.terminal})`);
     setNewItemName(''); 
     setNewItemQuantity(1);
     setNewItemImage(null);
@@ -208,6 +217,21 @@ const Dashboard = ({ onLogout }) => {
     const finalArea = editFormData.status === 'En Almacén' ? 'N/A' : editFormData.area;
 
     const original = inventory.find(i => i.id === id);
+    
+    // VALIDATION: Prevent uploading duplicate photo for the same status
+    if (editNewImage) {
+      let existingImages = original.images || [];
+      if (original.image && !existingImages.find(img => img.data === original.image)) {
+        existingImages = [{ data: original.image, status: original.status }];
+      }
+      
+      const duplicateStatusImage = existingImages.find(img => img.status === editFormData.status);
+      if (duplicateStatusImage) {
+         alert("Ya existe una foto para este estado. Cambie el estado o elimine la foto anterior desde la galería.");
+         return;
+      }
+    }
+
     const qtyDelta = original.quantity - parsedQty;
     const now = nowString();
 
@@ -260,6 +284,7 @@ const Dashboard = ({ onLogout }) => {
       
       delete childSpawn.isDraft; 
       setInventory(inventory.map(i => i.id === id ? parentRemain : i).concat(childSpawn));
+      addGlobalLog(currentUser, `Fraccionamiento de equipo: ${original.name}. Se extrajeron ${parsedQty} unidades hacia ${editFormData.status}.`);
     } else {
       if (qtyDelta < 0 && !original.isDraft) historyLog += `Cantidad incrementada de ${original.quantity} a ${parsedQty}.`;
       
@@ -286,6 +311,7 @@ const Dashboard = ({ onLogout }) => {
       
       delete updated.isDraft; 
       setInventory(inventory.map(i => i.id === id ? updated : i));
+      addGlobalLog(currentUser, `Editado equipo: ${updated.name}. ${historyLog}`);
     }
     setEditingId(null);
   };
@@ -294,6 +320,7 @@ const Dashboard = ({ onLogout }) => {
     if (deletePassword.trim() === 'CONFIRMO') {
       const updatedInventory = inventory.filter(i => i.id !== itemToDelete.id);
       setInventory(updatedInventory);
+    addGlobalLog(currentUser, `Eliminada fotografía del equipo: ${selectedImage.name}`);
       setItemToDelete(null);
       setDeletePassword('');
       setEditingId(null);
@@ -507,7 +534,7 @@ const Dashboard = ({ onLogout }) => {
                         <td style={{ padding: '8px' }}>
                           <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
                             <label style={{ cursor: 'pointer', padding: '4px 8px', background: 'var(--q-secondary)', borderRadius: '4px', fontSize: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Adjuntar nueva foto para este estado">
-                              📷
+                              <Camera size={16} color="var(--text-muted)" />
                               <input type="file" accept="image/*" style={{ display: 'none' }} onChange={async (e) => {
                                  const f = e.target.files[0];
                                  if (f) {
@@ -560,7 +587,7 @@ const Dashboard = ({ onLogout }) => {
                             {item.image && (
                               <div 
                                 className="item-thumbnail-container"
-                                onClick={() => setSelectedImage(item)}
+                                onClick={() => handleOpenGallery(item)}
                                 title="Ver foto ampliada"
                               >
                                 <img src={item.image} alt="Foto" className="item-thumbnail-img" />
@@ -829,26 +856,88 @@ const Dashboard = ({ onLogout }) => {
         </div>
       )}
 
-      {/* Modal Visor de Imagen */}
-      {selectedImage && (
-        <div className="modal-overlay" onClick={() => setSelectedImage(null)}>
-          <div className="modal-content" style={{ padding: '20px', background: 'var(--card-bg)', borderRadius: '8px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '20px', minWidth: '300px' }} onClick={e => e.stopPropagation()}>
+      
+      {/* Modal Centro de Actividades */}
+      {isGlobalLogOpen && (
+        <div className="modal-overlay" onClick={() => setIsGlobalLogOpen(false)}>
+          <div className="modal-content" style={{ padding: '20px', background: 'var(--card-bg)', borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '15px', minWidth: '600px', maxWidth: '95vw', maxHeight: '90vh' }} onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center', borderBottom: '1px solid var(--q-secondary)', paddingBottom: '10px' }}>
-              <h3 style={{ margin: 0, color: 'var(--q-dark)' }}>Galería: {selectedImage.name}</h3>
-              <button onClick={() => setSelectedImage(null)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '20px', color: 'var(--text-muted)' }}>✖</button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <Activity size={24} color="var(--q-accent)" />
+                <h3 style={{ margin: 0, color: 'var(--q-dark)' }}>Auditoría Global de Actividades</h3>
+              </div>
+              <button onClick={() => setIsGlobalLogOpen(false)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '20px', color: 'var(--text-muted)' }}>✖</button>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-              {selectedImage.images ? selectedImage.images.map((img, idx) => (
-                <div key={idx} style={{ border: '1px solid var(--q-secondary)', borderRadius: '6px', padding: '10px', background: 'var(--q-primary)' }}>
-                  <p style={{ margin: '0 0 10px 0', fontSize: '13px', color: 'var(--q-dark)', fontWeight: 'bold' }}>Estado: <span style={{ color: 'var(--q-accent)' }}>{img.status}</span> <span style={{ fontWeight: 'normal', color: 'var(--text-muted)' }}>({img.date})</span></p>
-                  <img src={img.data} alt="Ampliada" style={{ maxWidth: '100%', maxHeight: '60vh', borderRadius: '4px', display: 'block', margin: '0 auto' }} />
+            
+            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px', paddingRight: '10px' }}>
+              {globalLogs && globalLogs.length > 0 ? globalLogs.map(log => (
+                <div key={log.id} style={{ padding: '12px', borderLeft: '3px solid var(--q-accent)', background: 'var(--q-primary)', borderRadius: '0 4px 4px 0' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
+                    <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 'bold' }}>{log.date}</span>
+                    <span style={{ fontSize: '12px', color: 'var(--q-info)', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>👤 {log.user}</span>
+                  </div>
+                  <p style={{ margin: 0, fontSize: '14px', color: 'var(--text-main)' }}>{log.action}</p>
                 </div>
               )) : (
-                <div style={{ border: '1px solid var(--q-secondary)', borderRadius: '6px', padding: '10px', background: 'var(--q-primary)' }}>
-                  <p style={{ margin: '0 0 10px 0', fontSize: '13px', color: 'var(--q-dark)', fontWeight: 'bold' }}>Estado Inicial: <span style={{ color: 'var(--q-accent)' }}>{selectedImage.status}</span></p>
-                  <img src={selectedImage.image} alt="Ampliada" style={{ maxWidth: '100%', maxHeight: '60vh', borderRadius: '4px', display: 'block', margin: '0 auto' }} />
-                </div>
+                <p style={{ textAlign: 'center', color: 'var(--text-muted)', margin: '40px 0' }}>No hay actividades registradas en la caja negra.</p>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Visor de Imagen (Amazon Style) */}
+      {selectedImage && (
+        <div className="modal-overlay" onClick={() => setSelectedImage(null)}>
+          <div className="modal-content" style={{ padding: '20px', background: 'var(--card-bg)', borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '15px', minWidth: '400px', maxWidth: '95vw', maxHeight: '90vh' }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
+              <h3 style={{ margin: 0, color: 'var(--q-dark)' }}>{selectedImage.name}</h3>
+              <button onClick={() => setSelectedImage(null)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '20px', color: 'var(--text-muted)' }}>✖</button>
+            </div>
+            
+            <div style={{ display: 'flex', gap: '20px', height: '100%', overflow: 'hidden' }}>
+              {/* Carrusel Izquierdo (Miniaturas) */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', overflowY: 'auto', paddingRight: '10px', width: '80px', flexShrink: 0 }}>
+                {selectedImage.images ? selectedImage.images.map((img, idx) => (
+                  <div key={idx} onClick={() => setActivePhotoIdx(idx)} style={{ cursor: 'pointer', border: activePhotoIdx === idx ? '2px solid var(--q-accent)' : '1px solid var(--q-secondary)', borderRadius: '4px', padding: '2px', opacity: activePhotoIdx === idx ? 1 : 0.6, transition: 'all 0.2s' }}>
+                    <img src={img.data} alt="thumb" style={{ width: '100%', height: '70px', objectFit: 'cover', borderRadius: '2px', display: 'block' }} />
+                  </div>
+                )) : (
+                  <div style={{ cursor: 'pointer', border: '2px solid var(--q-accent)', borderRadius: '4px', padding: '2px' }}>
+                    <img src={selectedImage.image} alt="thumb" style={{ width: '100%', height: '70px', objectFit: 'cover', borderRadius: '2px', display: 'block' }} />
+                  </div>
+                )}
+              </div>
+              
+              {/* Imagen Principal */}
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', backgroundColor: '#f8fafc', borderRadius: '4px', padding: '10px', position: 'relative', minHeight: '300px' }}>
+                 <div style={{ position: 'absolute', top: '10px', left: '10px' }}>
+                   <p style={{ margin: 0, fontSize: '14px', fontWeight: 'bold', color: 'var(--q-dark)', background: 'rgba(255,255,255,0.9)', padding: '4px 8px', borderRadius: '4px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
+                     Estado: <span style={{ color: 'var(--q-accent)' }}>{selectedImage.images ? selectedImage.images[activePhotoIdx].status : selectedImage.status}</span>
+                     {selectedImage.images && selectedImage.images[activePhotoIdx].date && <span style={{ fontWeight: 'normal', color: 'var(--text-muted)', fontSize: '12px', marginLeft: '5px' }}>({selectedImage.images[activePhotoIdx].date})</span>}
+                   </p>
+                 </div>
+                 
+                 <div style={{ position: 'absolute', top: '10px', right: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                   {!(selectedImage.images ? selectedImage.images[activePhotoIdx].date === 'Registro Original' : true) && (
+                     <button 
+                       onClick={() => handleDeletePhoto(selectedImage.images ? selectedImage.images[activePhotoIdx].data : selectedImage.image)}
+                       style={{ background: 'var(--q-negative)', color: 'white', border: 'none', borderRadius: '4px', padding: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 5px rgba(0,0,0,0.2)' }}
+                       title="Eliminar Foto"
+                     >
+                       <Trash2 size={16} />
+                     </button>
+                   )}
+                   <label 
+                     style={{ background: 'var(--q-info)', color: 'white', border: 'none', borderRadius: '4px', padding: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 5px rgba(0,0,0,0.2)' }}
+                     title="Cambiar Foto"
+                   >
+                     <RefreshCw size={16} />
+                     <input type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => handleReplacePhoto(e, selectedImage.images ? selectedImage.images[activePhotoIdx].data : selectedImage.image)} />
+                   </label>
+                 </div>
+                 <img src={selectedImage.images ? selectedImage.images[activePhotoIdx].data : selectedImage.image} alt="Ampliada" style={{ maxWidth: '100%', maxHeight: '70vh', objectFit: 'contain' }} />
+              </div>
             </div>
           </div>
         </div>

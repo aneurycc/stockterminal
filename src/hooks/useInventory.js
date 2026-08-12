@@ -8,6 +8,7 @@ localforage.config({
 
 export function useInventory() {
   const [inventory, setInventory] = useState([]);
+  const [globalLogs, setGlobalLogs] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
 
   // Initialize and migrate data from localStorage to localforage
@@ -16,6 +17,8 @@ export function useInventory() {
       try {
         const storedInventory = await localforage.getItem('gpc_inventory');
         
+        const storedLogs = await localforage.getItem('gpc_global_logs');
+        if (storedLogs) setGlobalLogs(storedLogs);
         if (storedInventory) {
           setInventory(storedInventory);
         } else {
@@ -47,5 +50,22 @@ export function useInventory() {
     }
   };
 
-  return { inventory, saveInventory, isLoading };
+  
+  const addGlobalLog = async (user, action) => {
+    const newLog = {
+      id: Date.now(),
+      date: new Date().toLocaleString(),
+      user: user,
+      action: action
+    };
+    // Use functional state update to ensure latest state
+    setGlobalLogs(prev => {
+      const updated = [newLog, ...prev];
+      localforage.setItem('gpc_global_logs', updated).catch(console.error);
+      return updated;
+    });
+  };
+
+  return { inventory, saveInventory, isLoading, globalLogs, addGlobalLog };
+
 }
