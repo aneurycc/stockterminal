@@ -1,0 +1,493 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
+
+* {
+  box-sizing: border-box;
+}
+
+:root {
+  /* Paleta Corporativa GPC - Moove Theme */
+  --q-primary: #f4f6f9; /* Fondo gris muy suave típico de LMS */
+  --q-secondary: #e2e8f0; /* Bordes suaves */
+  --q-accent: #006B3F; /* Verde corporativo profundo Grupo Puntacana */
+  --q-positive: #10b981;
+  --q-negative: #ef4444;
+  --q-info: #0ea5e9;
+  --q-warning: #f59e0b;
+  --q-dark: #0f172a;
+  
+  --text-main: #334155; /* Texto gris azulado premium */
+  --text-muted: #64748b;
+  --card-bg: #ffffff;
+  --nav-bg: #ffffff;
+  --table-border: #e2e8f0;
+  
+  font-family: 'Poppins', -apple-system, Helvetica, Arial, sans-serif;
+  color: var(--text-main);
+  background-color: var(--q-primary);
+}
+
+[data-theme="dark"] {
+  --q-primary: #0f172a; /* Fondo oscuro azulado premium */
+  --q-secondary: #1e293b;
+  --q-dark: #f8fafc;
+  --text-main: #f1f5f9;
+  --text-muted: #94a3b8;
+  --card-bg: #1e293b;
+  --nav-bg: #1e293b;
+  --table-border: #334155;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background-color: var(--q-primary);
+  color: var(--text-main);
+  font-size: 15px; /* Ligeramente más grande para mejor lectura */
+  overflow-x: hidden;
+  width: 100%;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-weight: 600;
+  color: var(--q-dark);
+  letter-spacing: -0.5px; /* Toque corporativo en títulos */
+}
+
+/* Tarjetas Estilo Moodle "Moove" */
+.material-card {
+  background: var(--card-bg);
+  border-radius: 8px; /* Bordes ligeramente más suaves */
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05), 0 1px 2px rgba(0,0,0,0.03); /* Sombra casi invisible, limpia */
+  border: 1px solid var(--q-secondary);
+  border-top: 4px solid var(--q-accent); /* Línea verde corporativa superior */
+  transition: all 0.3s ease;
+}
+
+.btn-primary {
+  background-color: var(--q-accent);
+  color: white;
+  border: none;
+  padding: 10px 24px;
+  border-radius: 50px; /* Estilo Píldora completo */
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  box-shadow: 0 4px 6px -1px rgba(0, 107, 63, 0.2);
+  transition: all 0.3s ease;
+  letter-spacing: 0.5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 44px;
+}
+
+.btn-primary:hover {
+  background-color: #005230;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 8px -1px rgba(0, 107, 63, 0.3);
+}
+
+.btn-secondary {
+  background-color: var(--text-muted);
+  color: white;
+  border: none;
+  padding: 10px 24px;
+  border-radius: 50px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.btn-secondary:hover {
+  background-color: #475569;
+}
+
+.btn-danger {
+  background-color: var(--q-negative);
+  color: white;
+  border: none;
+  padding: 10px 24px;
+  border-radius: 50px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  box-shadow: 0 4px 6px -1px rgba(239, 68, 68, 0.2);
+  transition: all 0.3s ease;
+  letter-spacing: 0.5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 44px;
+}
+
+.btn-danger:hover {
+  background-color: #dc2626;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 8px -1px rgba(239, 68, 68, 0.3);
+}
+
+/* Inputs Premium y Fix para Dark Mode */
+.material-input-group {
+  background: transparent;
+  border-bottom: 2px solid var(--q-secondary);
+  border-radius: 4px 4px 0 0;
+  transition: border-color 0.3s;
+}
+
+.material-input-group:focus-within {
+  border-bottom-color: var(--q-accent);
+}
+
+.material-input-group input {
+  border: none;
+  outline: none;
+  background: transparent;
+  width: 100%;
+  padding: 12px 16px;
+  font-size: 15px;
+  color: var(--text-main); /* Fix crucial para Dark Mode */
+}
+
+/* Asegurar legibilidad general de inputs y selects en todo el sistema */
+input, select, textarea {
+  background-color: var(--card-bg);
+  color: var(--text-main) !important; 
+  border: 1px solid var(--q-secondary);
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-family: 'Poppins', sans-serif;
+  transition: all 0.2s;
+}
+
+input:focus, select:focus {
+  outline: none;
+  border-color: var(--q-accent);
+  box-shadow: 0 0 0 3px rgba(0, 107, 63, 0.1);
+}
+
+/* Fix para opciones de Select en Dark Mode (Browser native issue) */
+select option {
+  background-color: var(--card-bg);
+  color: var(--text-main);
+}
+
+.top-nav {
+  background: var(--nav-bg);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  padding: 15px 40px; /* Más espacio horizontal */
+  position: fixed;
+  top: 0;
+  width: 100%;
+  z-index: 1000;
+  border-bottom: 1px solid var(--q-secondary);
+}
+
+.footer {
+  background: var(--nav-bg);
+  color: var(--text-muted);
+  border-top: 1px solid var(--q-secondary);
+  text-align: center;
+  padding: 15px;
+  position: fixed;
+  bottom: 0;
+  width: 100%;
+  font-size: 13px;
+}
+
+.dashboard-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 24px; /* Mayor espacio para respirar */
+}
+
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 24px;
+  margin-bottom: 10px;
+}
+
+.kpi-card {
+  padding: 24px;
+  border-radius: 8px;
+  background: var(--card-bg);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  border: 1px solid var(--q-secondary);
+  border-top: 4px solid var(--q-accent);
+  text-align: center;
+  transition: transform 0.2s;
+}
+
+.kpi-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+}
+
+.kpi-title {
+  font-size: 13px;
+  color: var(--text-muted);
+  font-weight: 500;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+  letter-spacing: 0.5px;
+}
+
+.kpi-value {
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--q-dark);
+  margin: 0;
+}
+
+.login-card {
+  width: 420px;
+  max-width: 90%;
+  padding: 50px 40px;
+  text-align: center;
+  background: var(--card-bg);
+  border-radius: 12px;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.05);
+  border-top: 5px solid var(--q-accent);
+}
+
+.master-filters {
+  display: flex;
+  gap: 24px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+table {
+  background-color: var(--card-bg) !important;
+  color: var(--text-main) !important;
+  border-collapse: collapse;
+}
+
+th {
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  font-size: 12px;
+  letter-spacing: 0.5px;
+  padding: 16px;
+  border-bottom: 2px solid var(--q-secondary) !important;
+}
+
+td {
+  padding: 16px;
+}
+
+tr {
+  border-bottom: 1px solid var(--table-border) !important;
+}
+
+tr:hover {
+  background-color: rgba(0, 107, 63, 0.02);
+}
+
+[data-theme="dark"] tr:hover {
+  background-color: rgba(255, 255, 255, 0.02);
+}
+
+@media (max-width: 992px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+  .top-nav {
+    padding: 15px 20px;
+  }
+  .master-filters {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 15px !important;
+  }
+  .master-filters > div, .master-filters select {
+    width: 100%;
+    flex: none !important; /* Elimina la altura forzada de 200px */
+  }
+}
+
+@media print {
+  body {
+    background: white !important;
+    color: black !important;
+  }
+  .no-print, .top-nav, .master-filters, .kpi-grid, .pie-chart-container, button {
+    display: none !important;
+  }
+  .dashboard-grid, .dashboard-container {
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  .table-wrapper {
+    overflow: visible !important;
+    max-height: none !important;
+  }
+  .material-card {
+    box-shadow: none !important;
+    border: none !important;
+    padding: 0 !important;
+    background: white !important;
+  }
+  table {
+    width: 100% !important;
+    background-color: white !important;
+  }
+  th, td {
+    color: black !important;
+    border-color: #ddd !important;
+  }
+}
+
+/* Fixes para Botones y Modo Oscuro */
+.btn-edit {
+  padding: 6px 16px;
+  background: transparent;
+  color: var(--q-accent);
+  border: 1px solid var(--q-accent);
+  border-radius: 20px;
+  cursor: pointer;
+  font-weight: 500;
+  font-family: inherit;
+  transition: all 0.2s;
+}
+.btn-edit:hover {
+  background: var(--q-accent);
+  color: white;
+}
+[data-theme="dark"] .btn-edit {
+  color: #34d399; /* Verde más brillante para contraste en modo oscuro */
+  border-color: #34d399;
+}
+[data-theme="dark"] .btn-edit:hover {
+  background: #34d399;
+  color: #0f172a;
+}
+
+.btn-ok {
+  padding: 6px 12px;
+  background: var(--q-positive);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 600;
+  font-family: inherit;
+}
+.btn-cancel {
+  padding: 6px 12px;
+  background: var(--q-secondary);
+  color: var(--text-main);
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 600;
+  font-family: inherit;
+}
+.btn-cancel:hover {
+  background: var(--table-border);
+}
+
+/* Fix Mobile Layout */
+@media (max-width: 600px) {
+  .top-nav {
+    flex-direction: column !important;
+    gap: 15px;
+    padding: 15px !important;
+    position: relative !important;
+  }
+  .top-nav-group-logo {
+    width: 100%;
+    justify-content: center !important;
+  }
+  .top-nav-group-actions {
+    width: 100%;
+    justify-content: center !important;
+    flex-wrap: wrap;
+    gap: 10px !important;
+  }
+  .dark-mode-btn {
+    order: 3;
+    width: 100%;
+    justify-content: center !important;
+    margin-top: 5px;
+  }
+  .btn-primary, .btn-danger {
+    padding: 10px 10px;
+    font-size: 13px;
+    flex: 1; /* Make buttons grow to fill space symmetrically */
+    height: 44px !important; /* Force exact same height */
+  }
+  .dashboard-container {
+    padding-top: 20px !important;
+  }
+  .table-header-container {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 15px;
+  }
+  .table-header-container > div {
+    width: 100%;
+    justify-content: flex-start !important;
+  }
+  .table-header-container button {
+    flex: 1;
+    justify-content: center;
+  }
+  
+  .kpi-card {
+    padding: 15px;
+  }
+  .kpi-value {
+    font-size: 24px;
+  }
+}
+
+/* Polished Thumbnail UI */
+.item-thumbnail-container {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  cursor: pointer;
+  flex-shrink: 0;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  transition: all 0.2s ease;
+  background-color: #f8fafc;
+}
+
+.item-thumbnail-container:hover {
+  transform: scale(1.1);
+  box-shadow: 0 4px 8px rgba(0,0,0,0.12);
+  border-color: var(--q-primary);
+}
+
+.item-thumbnail-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.item-thumbnail-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  color: white;
+}
+
+.item-thumbnail-container:hover .item-thumbnail-overlay {
+  opacity: 1;
+}

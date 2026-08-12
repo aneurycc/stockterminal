@@ -1,0 +1,803 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { Trash2, Clock, Copy, Plus, Moon, Sun, Package } from 'lucide-react';
+import { useInventory } from '../hooks/useInventory';
+import KPICards from '../components/KPICards';
+
+const nowString = () => new Date().toLocaleString();
+
+// Datos iniciales vaciados por instrucción de producción
+const initialInventory = [];
+
+// NOTA: Se ha eliminado "Prestado" porque ahora es una relación estructural (owner !== terminal)
+const STATUS_OPTIONS = ['En uso', 'En Almacén', 'Dañado', 'Decomisado', 'En reparación', 'Por reparar'];
+const TERMINAL_OPTIONS = ['Terminal A', 'Terminal B', 'Terminal B2'];
+const AREAS_GENERAL = ['Facturacion', 'SG', 'CC', 'MS', 'ML', 'AD', 'Oficina TA', 'Oficina TB', 'Oficina TB2'];
+const AREAS_B2 = ['ML', 'Oficina TA', 'Oficina TB', 'Oficina TB2'];
+
+// Colores Semánticos GPC Material
+const COLORS = ['#21BA45', '#C10015', '#9E9E9E', '#F2C037', '#FF9800', '#43B02A'];
+
+const Dashboard = ({ onLogout }) => {
+  const { inventory, saveInventory: setInventory, isLoading } = useInventory();
+
+  
+  const [filterTerminal, setFilterTerminal] = useState('Todas');
+  const [filterStatus, setFilterStatus] = useState('Todos');
+  const [filterType, setFilterType] = useState('Todos');
+  
+  // Estado Modo Oscuro
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    return localStorage.getItem('gpc_theme') === 'dark';
+  });
+
+  useEffect(() => {
+    if (isDarkMode) {
+      document.body.setAttribute('data-theme', 'dark');
+      localStorage.setItem('gpc_theme', 'dark');
+    } else {
+      document.body.removeAttribute('data-theme');
+      localStorage.setItem('gpc_theme', 'light');
+    }
+  }, [isDarkMode]);
+  
+  // Estado del Modal de Registro Rapido
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+
+  const [newItemName, setNewItemName] = useState('');
+  const [newItemStatus, setNewItemStatus] = useState(STATUS_OPTIONS[0]);
+  const [newItemTerminal, setNewItemTerminal] = useState(TERMINAL_OPTIONS[0]);
+  const [newItemArea, setNewItemArea] = useState(AREAS_GENERAL[0]);
+  const [newItemQuantity, setNewItemQuantity] = useState(1);
+
+  const [editingId, setEditingId] = useState(null);
+  const [editFormData, setEditFormData] = useState({});
+  const [itemToDelete, setItemToDelete] = useState(null);
+  const [deletePassword, setDeletePassword] = useState('');
+
+  const [historyModalItem, setHistoryModalItem] = useState(null); 
+  const [newItemImage, setNewItemImage] = useState(null);
+  const [selectedImage, setSelectedImage] = useState(null);
+
+  const compressImage = (file) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = (event) => {
+        const img = new Image();
+        img.src = event.target.result;
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const MAX_WIDTH = 1600; // Incrementado drásticamente para máxima calidad
+          const MAX_HEIGHT = 1600;
+          let width = img.width;
+          let height = img.height;
+
+          if (width > height) {
+            if (width > MAX_WIDTH) {
+              height *= MAX_WIDTH / width;
+              width = MAX_WIDTH;
+            }
+          } else {
+            if (height > MAX_HEIGHT) {
+              width *= MAX_HEIGHT / height;
+              height = MAX_HEIGHT;
+            }
+          }
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+          resolve(canvas.toDataURL('image/jpeg', 0.90)); // 90% de calidad JPEG
+        };
+        img.onerror = (error) => reject(error);
+      };
+      reader.onerror = (error) => reject(error);
+    });
+  };
+
+  const uniqueTypes = useMemo(() => {
+    const types = new Set(inventory.map(item => item.name));
+    return ['Todos', ...Array.from(types)];
+  }, [inventory]);
+
+  const typeSuggestions = useMemo(() => Array.from(new Set(inventory.map(i => i.name))), [inventory]);
+
+  useEffect(() => {
+    if (newItemStatus === 'En Almacén') {
+      setNewItemArea('N/A');
+    } else if (newItemTerminal === 'Terminal B2') {
+      setNewItemArea('ML');
+    } else {
+      if (!AREAS_GENERAL.includes(newItemArea) || newItemArea === 'ML' || newItemArea === 'N/A') {
+         setNewItemArea(AREAS_GENERAL[0]);
+      }
+    }
+  }, [newItemTerminal, newItemStatus]);
+
+  const handleAddItem = (e) => {
+    e.preventDefault();
+    const qty = parseInt(newItemQuantity, 10);
+    if (!newItemName.trim() || isNaN(qty) || qty < 1) {
+      alert("Por favor, ingrese un nombre válido y una cantidad mayor a 0.");
+      return;
+    }
+
+    const now = nowString();
+    let remainingToDeduct = qty;
+    let newInventory = [...inventory];
+    let autoDeductedLogs = [];
+
+    // AUTO-DEDUCCIÓN DE ALMACÉN
+    if (newItemStatus !== 'En Almacén') {
+      newInventory = newInventory.map(item => {
+        if (remainingToDeduct > 0 && item.name === newItemName.trim() && item.terminal === newItemTerminal && item.status === 'En Almacén') {
+          if (item.quantity >= remainingToDeduct) {
+            item.quantity -= remainingToDeduct;
+            item.history = [...(item.history || []), `[${now}] Deducción automática: -${remainingToDeduct} unidades enviadas a "${newItemArea}" en estado "${newItemStatus}".`];
+            autoDeductedLogs.push(`[${now}] ${remainingToDeduct} unidades fueron deducidas automáticamente del stock en almacén.`);
+            remainingToDeduct = 0;
+            return item;
+          } else {
+            const deducted = item.quantity;
+            remainingToDeduct -= deducted;
+            item.quantity = 0;
+            item.history = [...(item.history || []), `[${now}] Deducción automática: -${deducted} unidades enviadas a "${newItemArea}". (Stock agotado)`];
+            autoDeductedLogs.push(`[${now}] ${deducted} unidades deducidas automáticamente del almacén (Stock agotado).`);
+            return item;
+          }
+        }
+        return item;
+      }).filter(item => item.quantity > 0);
+    }
+
+    const createdFromScratch = remainingToDeduct;
+    if (createdFromScratch > 0 && newItemStatus !== 'En Almacén') {
+       autoDeductedLogs.push(`[${now}] ${createdFromScratch} unidades registradas como stock nuevo (No provenientes de almacén).`);
+    }
+
+    const newItem = {
+      id: Date.now(),
+      name: newItemName.trim(),
+      status: newItemStatus,
+      terminal: newItemTerminal,
+      owner: newItemTerminal,
+      area: newItemStatus === 'En Almacén' ? 'N/A' : newItemArea,
+      quantity: qty,
+      image: newItemImage,
+      history: [`[${now}] Equipo Registrado. Estado Inicial: ${newItemStatus}. Cantidad: ${qty}.`, ...autoDeductedLogs]
+    };
+
+    setInventory([...newInventory, newItem]);
+    setNewItemName(''); 
+    setNewItemQuantity(1);
+    setNewItemImage(null);
+    setIsAddModalOpen(false); 
+  };
+
+  const handleEditClick = (item) => {
+    // Si estábamos editando otro item que era un borrador sin guardar (clon), lo eliminamos
+    if (editingId && editingId !== item.id) {
+      const prevEditingItem = inventory.find(i => i.id === editingId);
+      if (prevEditingItem && prevEditingItem.isDraft) {
+        setInventory(prev => prev.filter(i => i.id !== editingId));
+      }
+    }
+    setEditingId(item.id);
+    setEditFormData({ ...item });
+  };
+  
+  const handleCancelEdit = () => {
+    const currentItem = inventory.find(i => i.id === editingId);
+    if (currentItem && currentItem.isDraft) {
+      setInventory(inventory.filter(i => i.id !== editingId));
+    }
+    setEditingId(null);
+  };
+  
+  const handleSaveEdit = (id) => {
+    const parsedQty = parseInt(editFormData.quantity, 10);
+    if (isNaN(parsedQty) || parsedQty < 1 || !editFormData.name?.trim()) {
+      alert("Error: Nombre inválido o cantidad menor a 1.");
+      return;
+    }
+
+    const finalArea = editFormData.status === 'En Almacén' ? 'N/A' : editFormData.area;
+
+    const original = inventory.find(i => i.id === id);
+    const qtyDelta = original.quantity - parsedQty;
+    const now = nowString();
+
+    let historyLog = `[${now}] Editado. `;
+    if (original.status !== editFormData.status) historyLog += `Estado cambió de "${original.status}" a "${editFormData.status}". `;
+    
+    // CORRECCIÓN TYPO PROPIETARIO: Si cambia de terminal y solo tiene 1 registro histórico (el inicial), fue un error de registro.
+    let newOwner = original.owner;
+    if (original.terminal !== editFormData.terminal) {
+       if (original.history && original.history.length === 1 && original.owner === original.terminal) {
+         newOwner = editFormData.terminal;
+         historyLog += `Corrección de registro: Transferido permanentemente a ${editFormData.terminal}. `;
+       } else {
+         historyLog += `Trasladado físicamente a ${editFormData.terminal} (Mantiene propiedad original de ${original.owner}). `;
+       }
+    }
+
+    if (qtyDelta > 0 && !original.isDraft) {
+      // ERP Splitting Logic
+      const parentRemain = {
+        ...original,
+        quantity: qtyDelta,
+        history: [...(original.history || []), `[${now}] Fraccionamiento: ${parsedQty} unidad(es) extraídas y asignadas como "${editFormData.status}". Restan ${qtyDelta}.`]
+      };
+
+      const childSpawn = {
+        ...editFormData,
+        owner: newOwner,
+        area: finalArea,
+        id: Date.now(),
+        name: editFormData.name.trim(),
+        quantity: parsedQty,
+        history: [...(original.history || []), `[${now}] Creado por fraccionamiento de lote original (Cant: ${parsedQty}).`]
+      };
+      
+      delete childSpawn.isDraft; 
+      setInventory(inventory.map(i => i.id === id ? parentRemain : i).concat(childSpawn));
+    } else {
+      if (qtyDelta < 0 && !original.isDraft) historyLog += `Cantidad incrementada de ${original.quantity} a ${parsedQty}.`;
+      
+      const updated = {
+        ...editFormData,
+        owner: newOwner,
+        area: finalArea,
+        name: editFormData.name.trim(),
+        quantity: parsedQty,
+        history: [...(original.history || []), historyLog]
+      };
+      
+      delete updated.isDraft; 
+      setInventory(inventory.map(i => i.id === id ? updated : i));
+    }
+    setEditingId(null);
+  };
+
+  const confirmDelete = () => {
+    if (deletePassword.trim() === 'CONFIRMO') {
+      const updatedInventory = inventory.filter(i => i.id !== itemToDelete.id);
+      setInventory(updatedInventory);
+      setItemToDelete(null);
+      setDeletePassword('');
+      setEditingId(null);
+    } else {
+      alert('Debes escribir CONFIRMO (en mayúsculas) para eliminar.');
+    }
+  };
+
+  const exportToCSV = () => {
+    if (filteredInventory.length === 0) {
+      alert("No hay datos para exportar.");
+      return;
+    }
+    const headers = ["Equipo", "Cantidad", "Ubicación", "Área", "Estado", "Propietario"];
+    const rows = filteredInventory.map(item => [
+      `"${item.name.replace(/"/g, '""')}"`,
+      item.quantity,
+      `"${item.terminal}"`,
+      `"${item.area}"`,
+      `"${item.status}"`,
+      `"${(item.owner || item.terminal).replace(/"/g, '""')}"`
+    ]);
+    
+    // Usamos punto y coma (;) porque Excel en español no reconoce la coma por defecto
+    const csvContent = [headers.join(";"), ...rows.map(r => r.join(";"))].join("\n");
+    
+    // Añadimos el BOM (\uFEFF) para que Excel reconozca los acentos (UTF-8)
+    const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `Inventario_GPC_${nowString().replace(/[\/ :,]/g, '_')}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleCloneItem = (item) => {
+    const now = nowString();
+    const cloned = {
+      ...item,
+      id: Date.now(),
+      isDraft: true, 
+      history: [...(item.history || []), `[${now}] Registro clonado a partir de otro lote de equipos.`]
+    };
+    setInventory([...inventory, cloned]);
+    handleEditClick(cloned); 
+  };
+
+  const handleEditFormChange = (e, field) => {
+    const val = e.target.value;
+    setEditFormData(prev => {
+      let updated = { ...prev, [field]: val };
+      if (field === 'terminal' && val === 'Terminal B2' && updated.status !== 'En Almacén') updated.area = 'ML';
+      if (field === 'status' && val === 'En Almacén') updated.area = 'N/A';
+      if (field === 'status' && prev.status === 'En Almacén' && val !== 'En Almacén') updated.area = getAvailableAreas(updated.terminal)[0];
+      return updated;
+    });
+  };
+  const getAvailableAreas = (terminal) => terminal === 'Terminal B2' ? AREAS_B2 : AREAS_GENERAL;
+
+  // Filtrado de inventario para la vista principal
+  const filteredInventory = inventory.filter(item => {
+    const matchTerminal = filterTerminal === 'Todas' ? true : item.terminal === filterTerminal;
+    const matchStatus = filterStatus === 'Todos' ? true : item.status === filterStatus;
+    const matchType = filterType === 'Todos' ? true : item.name === filterType;
+    return matchTerminal && matchStatus && matchType;
+  });
+
+  const getChartData = () => {
+    let dataMap = {};
+    if (filterTerminal === 'Todas') {
+      filteredInventory.forEach(item => { dataMap[item.terminal] = (dataMap[item.terminal] || 0) + item.quantity; });
+    } else {
+      filteredInventory.forEach(item => { 
+        dataMap[item.status] = (dataMap[item.status] || 0) + item.quantity; 
+      });
+    }
+    return Object.keys(dataMap).map(key => ({ name: key, value: dataMap[key] }));
+  };
+
+  const chartData = getChartData();
+
+  // KPIs
+  // Excluimos "Decomisado" del cálculo total real para no inflar métricas con basura
+  const totalItems = filteredInventory.filter(i => i.status !== 'Decomisado').reduce((acc, curr) => acc + curr.quantity, 0);
+  const operativosItems = filteredInventory.filter(i => i.status.startsWith('En uso')).reduce((acc, curr) => acc + curr.quantity, 0);
+  const danadosItems = filteredInventory.filter(i => i.status.startsWith('Dañado')).reduce((acc, curr) => acc + curr.quantity, 0);
+  
+  // KPI de Préstamos: ¿Cuántos equipos PROPIEDAD de la terminal actual (filtro) están ubicados físicamente en otra terminal?
+  // Esto analiza todo el inventario base, no el inventario filtrado, para detectar equipos que salieron de su frontera.
+  const prestadosItems = inventory.filter(i => {
+    const isOwnedByFilter = filterTerminal === 'Todas' ? true : i.owner === filterTerminal;
+    const isLoanedOut = i.owner && i.owner !== i.terminal; // Si la terminal actual es diferente al dueño, está prestado.
+    return isOwnedByFilter && isLoanedOut;
+  }).reduce((acc, curr) => acc + curr.quantity, 0);
+
+  return (
+    <div style={{ padding: '80px 20px 60px 20px', maxWidth: '1400px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '20px' }} className="dashboard-container">
+      
+      <nav className="top-nav no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div className="top-nav-group-logo" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <img src="/logo-app.png" alt="Logo" style={{ height: '48px', objectFit: 'contain' }} />
+          <h2 style={{ margin: 0, color: 'var(--q-accent)', fontWeight: 900 }}>Stock <span style={{ color: 'var(--text-main)', fontWeight: 300 }}>Terminal</span></h2>
+        </div>
+        <div className="top-nav-group-actions" style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
+          
+          <button onClick={() => setIsDarkMode(!isDarkMode)} className="dark-mode-btn" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--q-dark)', display: 'flex', alignItems: 'center' }} title="Alternar Modo Oscuro">
+            {isDarkMode ? <Sun size={24} /> : <Moon size={24} />}
+          </button>
+
+          <button onClick={() => setIsAddModalOpen(true)} className="btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+            <Plus size={18} /> NUEVO EQUIPO
+          </button>
+          <button onClick={onLogout} className="btn-danger">
+            Cerrar Sesión
+          </button>
+        </div>
+      </nav>
+
+      {/* Controladores */}
+      <div className="material-card master-filters no-print" style={{ padding: '15px 20px', display: 'flex', flexWrap: 'wrap', gap: '20px' }}>
+        <div style={{ flex: '1 1 200px' }}>
+          <label style={{ fontSize: '12px', display: 'block', fontWeight: '500', color: 'var(--text-muted)' }}>Terminal</label>
+          <select value={filterTerminal} onChange={(e) => setFilterTerminal(e.target.value)} style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px', outline: 'none' }}>
+            <option value="Todas">Global (Todas)</option>
+            {TERMINAL_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+        </div>
+
+        <div style={{ flex: '1 1 200px' }}>
+          <label style={{ fontSize: '12px', display: 'block', fontWeight: '500', color: 'var(--text-muted)' }}>Estado</label>
+          <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px', outline: 'none' }}>
+            <option value="Todos">Todos los Estados</option>
+            {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </div>
+
+        <div style={{ flex: '1 1 200px' }}>
+          <label style={{ fontSize: '12px', display: 'block', fontWeight: '500', color: 'var(--text-muted)' }}>Tipo de Equipo</label>
+          <select value={filterType} onChange={(e) => setFilterType(e.target.value)} style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px', outline: 'none' }}>
+            {uniqueTypes.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+        </div>
+      </div>
+
+      {/* KPI Cards */}
+      <KPICards 
+        totalItems={totalItems} 
+        operativosItems={operativosItems} 
+        danadosItems={danadosItems} 
+        prestadosItems={prestadosItems} 
+      />
+
+      <div className="dashboard-grid">
+        {/* Gráfico Analítico (Ocupa todo el ancho ahora) */}
+        <div className="material-card no-print" style={{ padding: '20px', height: '350px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+          <h3 style={{ color: 'var(--q-dark)', marginBottom: '0px', fontSize: '16px' }}>
+            Distribución ({filterTerminal === 'Todas' ? 'por Terminales' : 'por Estados'})
+          </h3>
+          {chartData.length > 0 ? (
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie data={chartData} cx="50%" cy="50%" innerRadius={60} outerRadius={110} paddingAngle={2} dataKey="value">
+                  {chartData.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
+                </Pie>
+                <Tooltip formatter={(value, name) => [`${value} Equipos`, name]} />
+                <Legend />
+              </PieChart>
+            </ResponsiveContainer>
+          ) : (
+            <p style={{ marginTop: '50px', color: 'var(--text-muted)' }}>Sin datos.</p>
+          )}
+        </div>
+
+        {/* Panel Principal: Tabla */}
+        <div className="material-card" style={{ padding: '20px' }}>
+          <div className="table-header-container" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+            <h3 style={{ color: 'var(--q-dark)', margin: 0 }}>
+              Detalle de Inventario ({totalItems} unidades)
+            </h3>
+            <div style={{ display: 'flex', gap: '10px' }} className="no-print">
+              <button onClick={() => window.print()} className="btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
+                Imprimir
+              </button>
+              <button onClick={exportToCSV} className="btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                Exportar CSV
+              </button>
+            </div>
+          </div>
+
+          <div className="table-wrapper" style={{ overflowX: 'auto', maxHeight: '600px' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', backgroundColor: 'white' }}>
+              <thead>
+                <tr style={{ borderBottom: '2px solid var(--q-secondary)', color: 'var(--text-muted)' }}>
+                  <th style={{ padding: '12px', textAlign: 'left', fontWeight: '500' }}>Equipo</th>
+                  <th style={{ padding: '12px', textAlign: 'left', fontWeight: '500' }}>Cant.</th>
+                  <th style={{ padding: '12px', textAlign: 'left', fontWeight: '500' }}>Ubicación</th>
+                  <th style={{ padding: '12px', textAlign: 'left', fontWeight: '500' }}>Área</th>
+                  <th style={{ padding: '12px', textAlign: 'left', fontWeight: '500' }}>Estado</th>
+                  <th className="no-print" style={{ padding: '12px', textAlign: 'center', fontWeight: '500', minWidth: '150px' }}>Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredInventory.map(item => (
+                  <tr key={item.id} style={{ borderBottom: '1px solid #eee' }}>
+                    {editingId === item.id ? (
+                      <>
+                        <td style={{ padding: '8px' }}>
+                          <input 
+                            type="text" 
+                            list={(editFormData.name === item.name || editFormData.name === '') ? "equipment-names-edit" : undefined} 
+                            value={editFormData.name} 
+                            onChange={(e) => handleEditFormChange(e, 'name')} 
+                            style={{ width: '100%', padding: '4px' }} 
+                          />
+                          <datalist id="equipment-names-edit">{typeSuggestions.map(t => <option key={t} value={t} />)}</datalist>
+                        </td>
+                        <td style={{ padding: '8px' }}><input type="number" min="1" max={item.quantity} value={editFormData.quantity} onChange={(e) => handleEditFormChange(e, 'quantity')} style={{ width: '50px', padding: '4px' }} title={`Fraccionar lote. Original: ${item.quantity}`} /></td>
+                        <td style={{ padding: '8px' }}>
+                          {/* Cambiar de terminal ahora significa trasladarlo/prestarlo */}
+                          <select value={editFormData.terminal} onChange={(e) => { handleEditFormChange(e, 'terminal'); if (e.target.value === 'Terminal B2') setEditFormData(prev => ({ ...prev, terminal: e.target.value, area: 'ML' })); }}>
+                            {TERMINAL_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
+                          </select>
+                        </td>
+                        <td style={{ padding: '8px' }}>
+                          <select value={editFormData.area} onChange={(e) => handleEditFormChange(e, 'area')} disabled={editFormData.status === 'En Almacén'} style={{ opacity: editFormData.status === 'En Almacén' ? 0.5 : 1 }}>
+                            {editFormData.status === 'En Almacén' ? <option value="N/A">N/A (Almacén)</option> : getAvailableAreas(editFormData.terminal).map(a => <option key={a} value={a}>{a}</option>)}
+                          </select>
+                        </td>
+                        <td style={{ padding: '8px' }}>
+                          <select value={editFormData.status} onChange={(e) => handleEditFormChange(e, 'status')}>
+                            {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                          </select>
+                        </td>
+                        <td style={{ padding: '8px', textAlign: 'center', display: 'flex', gap: '5px', justifyContent: 'center', alignItems: 'center' }}>
+                          <button onClick={() => handleSaveEdit(item.id)} className="btn-ok">OK</button>
+                          <button onClick={handleCancelEdit} className="btn-cancel">X</button>
+                          <button onClick={() => setItemToDelete(item)} style={{ padding: '6px', background: '#C10015', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                            <Trash2 size={16} />
+                          </button>
+                        </td>
+                      </>
+                    ) : (
+                      <>
+                        <td style={{ padding: '12px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            {item.image && (
+                              <div 
+                                className="item-thumbnail-container"
+                                onClick={() => setSelectedImage(item.image)}
+                                title="Ver foto ampliada"
+                              >
+                                <img src={item.image} alt="Foto" className="item-thumbnail-img" />
+                                <div className="item-thumbnail-overlay">
+                                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                                </div>
+                              </div>
+                            )}
+                            <span>{item.name}</span>
+                          </div>
+                        </td>
+                        <td style={{ padding: '12px', fontWeight: 'bold' }}>{item.quantity}</td>
+                        
+                        <td style={{ padding: '12px' }}>
+                          <div style={{ fontWeight: '500' }}>{item.terminal}</div>
+                          {/* ETIQUETA VISUAL DE PROPIEDAD SI ESTÁ PRESTADO */}
+                          {item.owner && item.owner !== item.terminal && (
+                            <div style={{ 
+                               fontSize: '10px', 
+                               color: '#e67e22', 
+                               fontWeight: 'bold', 
+                               marginTop: '4px', 
+                               textTransform: 'uppercase',
+                               backgroundColor: '#fdf2e9',
+                               padding: '2px 6px',
+                               borderRadius: '4px',
+                               display: 'inline-block'
+                            }}>
+                              Prop. de {item.owner}
+                            </div>
+                          )}
+                        </td>
+
+                        <td style={{ padding: '12px' }}>{item.area}</td>
+                        <td style={{ padding: '12px' }}>
+                          <span style={{ 
+                            padding: '4px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: '500',
+                            backgroundColor: item.status.startsWith('En uso') ? '#E8F5E9' : 
+                                             item.status.startsWith('Dañado') ? '#FFEBEE' :
+                                             item.status.startsWith('Decomisado') ? '#F5F5F5' : '#FFF8E1',
+                            color: item.status.startsWith('En uso') ? '#2E7D32' : 
+                                   item.status.startsWith('Dañado') ? '#C62828' :
+                                   item.status.startsWith('Decomisado') ? '#616161' : '#F57F17',
+                            border: '1px solid transparent'
+                          }}>
+                            {item.status}
+                          </span>
+                        </td>
+                        <td className="no-print" style={{ padding: '12px', textAlign: 'center', display: 'flex', gap: '5px', justifyContent: 'center' }}>
+                          <button onClick={() => handleEditClick(item)} className="btn-edit">
+                            EDITAR
+                          </button>
+                          <button onClick={() => handleCloneItem(item)} title="Duplicar Equipo" style={{ padding: '6px', background: '#e3f2fd', color: '#1565c0', border: 'none', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                            <Copy size={16} />
+                          </button>
+                          <button onClick={() => setHistoryModalItem(item)} title="Ver Historial" style={{ padding: '6px', background: '#fff3e0', color: '#ef6c00', border: 'none', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                            <Clock size={16} />
+                          </button>
+                        </td>
+                      </>
+                    )}
+                  </tr>
+                ))}
+                {filteredInventory.length === 0 && (
+                  <tr>
+                    <td colSpan="6" style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)' }}>No hay equipos que coincidan con estos filtros.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      
+      {/* Modal Añadir Nuevo Equipo */}
+      {isAddModalOpen && (
+        <div style={{ 
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, 
+          backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 3000, 
+          display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px',
+          backdropFilter: 'blur(3px)'
+        }}>
+          <div className="material-card" style={{ padding: '30px', width: '100%', maxWidth: '500px', position: 'relative' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+               <h3 style={{ margin: 0, color: 'var(--q-dark)' }}>Registrar Nuevo Equipo</h3>
+               <button onClick={() => setIsAddModalOpen(false)} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#999' }}>✖</button>
+            </div>
+            
+            <form onSubmit={handleAddItem} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)' }}>Ubicación Física</label>
+                  <select value={newItemTerminal} onChange={(e) => setNewItemTerminal(e.target.value)} style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}>
+                    {TERMINAL_OPTIONS.map(terminal => <option key={terminal} value={terminal}>{terminal}</option>)}
+                  </select>
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)' }}>Área</label>
+                  <select value={newItemArea} onChange={(e) => setNewItemArea(e.target.value)} disabled={newItemStatus === 'En Almacén'} style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px', opacity: newItemStatus === 'En Almacén' ? 0.5 : 1 }}>
+                    {newItemStatus === 'En Almacén' ? <option value="N/A">N/A (Almacén)</option> : getAvailableAreas(newItemTerminal).map(area => <option key={area} value={area}>{area}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)' }}>Nombre del Equipo</label>
+                <div className="material-input-group">
+                  <input 
+                    type="text" 
+                    list={newItemName === '' ? "equipment-names" : undefined} 
+                    value={newItemName} 
+                    onChange={(e) => setNewItemName(e.target.value)} 
+                    placeholder="Ej. Separador de Fila" 
+                  />
+                  <datalist id="equipment-names">
+                    {typeSuggestions.map(t => <option key={t} value={t} />)}
+                  </datalist>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)' }}>Cant.</label>
+                  <div className="material-input-group"><input type="number" min="1" value={newItemQuantity} onChange={(e) => setNewItemQuantity(e.target.value)} /></div>
+                </div>
+                <div style={{ flex: 2 }}>
+                  <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)' }}>Estado Inicial</label>
+                  <select value={newItemStatus} onChange={(e) => setNewItemStatus(e.target.value)} style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}>
+                    {STATUS_OPTIONS.map(status => <option key={status} value={status}>{status}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)', marginBottom: '5px' }}>Fotografía (Opcional)</label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <label style={{ 
+                    cursor: 'pointer', 
+                    padding: '8px 12px', 
+                    backgroundColor: '#f1f5f9', 
+                    border: '1px solid #cbd5e1', 
+                    borderRadius: '4px', 
+                    fontSize: '13px',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                    color: 'var(--q-dark)'
+                  }}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"></path><circle cx="12" cy="13" r="3"></circle></svg>
+                    Adjuntar Foto
+                    <input 
+                      type="file" 
+                      accept="image/*" 
+                      style={{ display: 'none' }} 
+                      onChange={async (e) => {
+                        const file = e.target.files[0];
+                        if (file) {
+                          try {
+                            const compressedBase64 = await compressImage(file);
+                            setNewItemImage(compressedBase64);
+                          } catch (err) {
+                            alert("Error al procesar la imagen");
+                          }
+                        }
+                      }} 
+                    />
+                  </label>
+                  {newItemImage && (
+                    <div style={{ position: 'relative' }}>
+                      <img src={newItemImage} alt="Preview" style={{ height: '40px', width: '40px', objectFit: 'cover', borderRadius: '4px', border: '1px solid #eee' }} />
+                      <button 
+                        type="button" 
+                        onClick={() => setNewItemImage(null)}
+                        style={{ position: 'absolute', top: '-8px', right: '-8px', background: '#C10015', color: 'white', border: 'none', borderRadius: '50%', width: '18px', height: '18px', fontSize: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                      >✖</button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <button type="submit" className="btn-primary" style={{ marginTop: '10px', padding: '12px' }}>GUARDAR REGISTRO</button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Historial */}
+      {historyModalItem && (
+        <div style={{ 
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, 
+          backgroundColor: 'rgba(0,0,0,0.7)', zIndex: 3000, 
+          display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' 
+        }}>
+          <div className="material-card" style={{ padding: '30px', width: '100%', maxWidth: '500px', maxHeight: '80vh', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid #eee', paddingBottom: '10px', marginBottom: '20px' }}>
+               <h3 style={{ margin: 0, color: 'var(--q-dark)' }}>Bitácora de Auditoría</h3>
+               <button onClick={() => setHistoryModalItem(null)} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#999' }}>✖</button>
+            </div>
+            
+            <h4 style={{ color: 'var(--q-accent)', marginTop: 0 }}>{historyModalItem.name}</h4>
+            <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '20px' }}>
+              Ubicación actual: {historyModalItem.terminal} - {historyModalItem.area} <br/>
+              <span style={{color: '#e67e22'}}>Propietario original: {historyModalItem.owner || historyModalItem.terminal}</span>
+            </p>
+            
+            <div style={{ borderLeft: '3px solid var(--q-secondary)', paddingLeft: '20px', marginLeft: '10px', display: 'flex', flexDirection: 'column', gap: '15px' }}>
+              {(historyModalItem.history || []).map((log, index) => (
+                <div key={index} style={{ position: 'relative' }}>
+                  <div style={{ position: 'absolute', left: '-27px', top: '2px', width: '11px', height: '11px', backgroundColor: 'var(--q-accent)', borderRadius: '50%', border: '2px solid white' }}></div>
+                  <p style={{ margin: 0, fontSize: '13px', lineHeight: '1.5', color: 'var(--text-main)' }}>{log}</p>
+                </div>
+              ))}
+              {!(historyModalItem.history && historyModalItem.history.length > 0) && (
+                 <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>No hay registros históricos previos a la actualización V2.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Eliminar */}
+      {itemToDelete && (
+        <div style={{ 
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, 
+          backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 3000, 
+          display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px',
+          backdropFilter: 'blur(3px)'
+        }}>
+          <div className="material-card" style={{ padding: '30px', width: '100%', maxWidth: '450px', textAlign: 'left', position: 'relative', borderTop: '4px solid #C10015' }}>
+            
+            <h3 style={{ color: 'var(--q-dark)', margin: '0 0 15px 0', display: 'flex', alignItems: 'center', gap: '10px', fontSize: '18px' }}>
+              <Trash2 color="#C10015" size={20} />
+              Eliminar Registro de Equipo
+            </h3>
+            
+            <p style={{ margin: '0 0 20px 0', lineHeight: '1.5', color: 'var(--text-muted)', fontSize: '14px' }}>
+              Estás a punto de eliminar de forma permanente el registro de <b>{itemToDelete.name}</b> asignado a <b>{itemToDelete.terminal}</b>. Esta acción removerá el equipo del inventario actual y su historial.
+            </p>
+            
+            <div style={{ textAlign: 'left', marginBottom: '25px', backgroundColor: 'var(--q-secondary)', padding: '15px', borderRadius: '4px', border: '1px solid var(--table-border)' }}>
+              <label style={{ fontSize: '13px', fontWeight: 'bold', color: 'var(--q-dark)' }}>Confirmación de Seguridad</label>
+              <p style={{ fontSize: '12px', margin: '5px 0 10px 0', color: 'var(--text-muted)' }}>Para proceder, escribe la palabra <b>CONFIRMO</b> (en mayúsculas) en el siguiente campo:</p>
+              <input 
+                type="text" 
+                placeholder="Escribe CONFIRMO" 
+                value={deletePassword} 
+                onChange={(e) => setDeletePassword(e.target.value)} 
+                onPaste={(e) => e.preventDefault()}
+                style={{ width: '100%', outline: 'none', fontFamily: 'monospace', letterSpacing: '1px' }}
+                placeholder="CONFIRMO"
+              />
+            </div>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button 
+                className="btn-danger" 
+                style={{ flex: 1, opacity: deletePassword.trim() === 'CONFIRMO' ? 1 : 0.5 }}
+                disabled={deletePassword.trim() !== 'CONFIRMO'}
+                onClick={confirmDelete}
+              >
+                Eliminar Permanentemente
+              </button>
+              <button className="btn-secondary" style={{ flex: 1 }} onClick={() => { setItemToDelete(null); setDeletePassword(''); }}>Cancelar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Visor de Imagen */}
+      {selectedImage && (
+        <div className="modal-overlay" onClick={() => setSelectedImage(null)}>
+          <div className="modal-content" style={{ width: 'auto', padding: '0' }} onClick={e => e.stopPropagation()}>
+            <img src={selectedImage} alt="Ampliada" style={{ maxWidth: '90vw', maxHeight: '80vh', borderRadius: '4px' }} />
+            <button 
+              onClick={() => setSelectedImage(null)}
+              style={{ position: 'absolute', top: '-15px', right: '-15px', background: '#fff', color: '#333', border: 'none', borderRadius: '50%', width: '30px', height: '30px', fontSize: '16px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 5px rgba(0,0,0,0.2)' }}
+            >✖</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default Dashboard;
