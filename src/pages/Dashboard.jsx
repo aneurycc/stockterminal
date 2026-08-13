@@ -674,15 +674,7 @@ const Dashboard = ({ onLogout }) => {
 
         {/* Google Maps Embed */}
         <div className="material-card no-print" style={{ height: '420px', overflow: 'hidden', padding: 0, position: 'relative' }}>
-          <iframe 
-            src="https://maps.google.com/maps?q=18.56354,-68.375685&t=k&z=16&ie=UTF8&iwloc=&output=embed" 
-            width="100%" 
-            height="100%" 
-            style={{ border: 0 }} 
-            allowFullScreen="" 
-            loading="lazy" 
-            referrerPolicy="no-referrer-when-downgrade"
-          ></iframe>
+          <img src="/mapa-estatico.jpg" alt="Mapa de Terminales" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
         </div>
       </div>
 
