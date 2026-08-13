@@ -457,7 +457,7 @@ const Dashboard = ({ onLogout }) => {
       `"${item.terminal}"`,
       `"${item.area}"`,
       `"${item.status}"`,
-      `"${(item.owner || item.terminal).replace(/"/g, '""')}"`
+      `"${(item.ownerTerminal || item.terminal).replace(/"/g, '""')}"`
     ]);
     
     // Usamos punto y coma (;) porque Excel en español no reconoce la coma por defecto
@@ -526,7 +526,7 @@ const Dashboard = ({ onLogout }) => {
     const matchTextArea = (item.area || '').toLowerCase().includes(textFilterArea.toLowerCase());
     const matchTextEstado = (item.status || '').toLowerCase().includes(textFilterEstado.toLowerCase());
 
-    let matchOwner = filterOwner === 'Todos' ? true : item.owner === filterOwner;
+    let matchOwner = filterOwner === 'Todos' ? true : item.ownerTerminal === filterOwner;
     return matchTerminal && matchStatus && matchType && matchTextEquipo && matchTextArea && matchTextEstado && matchOwner;
   });
 
@@ -813,7 +813,7 @@ const Dashboard = ({ onLogout }) => {
                         <td style={{ padding: '12px' }}>
                           <div style={{ fontWeight: '500' }}>{item.terminal}</div>
                           {/* ETIQUETA VISUAL DE PROPIEDAD SI ESTÁ PRESTADO */}
-                          {item.owner && item.owner !== item.terminal && (
+                          {item.ownerTerminal && item.ownerTerminal !== item.terminal && (
                             <div style={{ 
                                fontSize: '10px', 
                                color: '#e67e22', 
@@ -825,7 +825,7 @@ const Dashboard = ({ onLogout }) => {
                                borderRadius: '4px',
                                display: 'inline-block'
                             }}>
-                              Prop. de {item.owner}
+                              Prop. de {item.ownerTerminal}
                             </div>
                           )}
                         </td>
@@ -998,7 +998,7 @@ const Dashboard = ({ onLogout }) => {
             <h4 style={{ color: 'var(--q-accent)', marginTop: 0 }}>{historyModalItem.name}</h4>
             <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '20px' }}>
               Ubicación actual: {historyModalItem.terminal} - {historyModalItem.area} <br/>
-              <span style={{color: '#e67e22'}}>Propietario original: {historyModalItem.owner || historyModalItem.terminal}</span>
+              <span style={{color: '#e67e22'}}>Propietario original: {historyModalItem.ownerTerminal || historyModalItem.terminal}</span>
             </p>
             
             <div style={{ borderLeft: '3px solid var(--q-secondary)', paddingLeft: '20px', marginLeft: '10px', display: 'flex', flexDirection: 'column', gap: '15px' }}>
@@ -1147,7 +1147,7 @@ const Dashboard = ({ onLogout }) => {
                   </div>
                   <div>
                     <label style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Propiedad de</label>
-                    <div style={{ fontSize: '15px', fontWeight: '500' }}>{shareItemView.owner || shareItemView.terminal}</div>
+                    <div style={{ fontSize: '15px', fontWeight: '500' }}>{shareItemView.ownerTerminal || shareItemView.terminal}</div>
                   </div>
                 </div>
               </div>
