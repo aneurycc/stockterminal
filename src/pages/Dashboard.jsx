@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { Trash2, Clock, Copy, Plus, Moon, Sun, Package, Camera, RefreshCw, Activity } from 'lucide-react';
+import { Trash2, Clock, Upload, Copy, Plus, Moon, Sun, Package, Camera, RefreshCw, Activity, ChevronDown } from 'lucide-react';
 import { useInventory } from '../hooks/useInventory';
+import * as XLSX from 'xlsx';
 import KPICards from '../components/KPICards';
 
 const nowString = () => new Date().toLocaleString();
@@ -10,13 +11,24 @@ const nowString = () => new Date().toLocaleString();
 const initialInventory = [];
 
 // NOTA: Se ha eliminado "Prestado" porque ahora es una relación estructural (owner !== terminal)
-const STATUS_OPTIONS = ['En uso', 'En Almacén', 'Dañado', 'Decomisado', 'En reparación', 'Por reparar'];
+const STATUS_OPTIONS = ['En uso', 'En Almacén', 'Inhabilitado', 'Decomisado', 'En reparación', 'Por reparar', 'Por decomisar'];
 const TERMINAL_OPTIONS = ['Terminal A', 'Terminal B', 'Terminal B2'];
-const AREAS_GENERAL = ['Facturacion', 'SG', 'CC', 'MS', 'ML', 'AD', 'Oficina TA', 'Oficina TB', 'Oficina TB2'];
-const AREAS_B2 = ['ML', 'Oficina TA', 'Oficina TB', 'Oficina TB2'];
+const BASE_AREAS = ['Facturacion C1', 'Facturacion C2', 'Facturacion C3', 'Facturacion C4', 'SG', 'CC', 'MS', 'ML', 'AD', 'Foodcourt', 'Oficina'];
+const AREAS_GENERAL = BASE_AREAS;
+const AREAS_A = [...BASE_AREAS, 'Gate 1', 'Gate 2', 'Gate 3', 'Gate 4', 'Gate 5', 'Gate 6', 'Gate 7', 'Gate 8', 'Gate 9', 'Gate 10', 'Gate 11', 'Gate 12', 'Gate 13', 'Gate 14', 'Gate 15', 'Gate 16'];
+const AREAS_B = [...BASE_AREAS, 'Gate 20', 'Gate 21', 'Gate 22', 'Gate 23', 'Gate 24', 'Gate 25', 'Gate 26F'];
+const BASE_AREAS_B2 = ['Foodcourt', 'ML', 'Oficina'];
+const AREAS_B2 = [...BASE_AREAS_B2, 'Gate 27', 'Gate 28', 'Gate 29', 'Gate 30', 'Gate 31'];
+
+const getAreasForTerminal = (term) => {
+  if (term === 'Terminal A') return AREAS_A;
+  if (term === 'Terminal B') return AREAS_B;
+  if (term === 'Terminal B2') return AREAS_B2;
+  return AREAS_GENERAL;
+};
 
 // Colores Semánticos GPC Material
-const COLORS = ['#21BA45', '#C10015', '#9E9E9E', '#F2C037', '#FF9800', '#43B02A'];
+const STATUS_COLORS = { 'En uso': '#21BA45', 'En Almacén': '#3498db', 'Inhabilitado': '#e74c3c', 'Decomisado': '#7f8c8d', 'Por reparar': '#e67e22', 'Por decomisar': '#f1c40f', 'En reparación': '#9b59b6', 'Terminal A': '#1abc9c', 'Terminal B': '#e67e22', 'Terminal B2': '#9b59b6' };
 
 const Dashboard = ({ onLogout }) => {
   const { inventory, saveInventory: setInventory, isLoading, globalLogs, addGlobalLog } = useInventory();
@@ -27,6 +39,14 @@ const Dashboard = ({ onLogout }) => {
   const [filterTerminal, setFilterTerminal] = useState('Todas');
   const [filterStatus, setFilterStatus] = useState('Todos');
   const [filterType, setFilterType] = useState('Todos');
+  const [filterIsProperty, setFilterIsProperty] = useState(false);
+  const [colFilterEquipo, setColFilterEquipo] = useState('Todos');
+  const [colFilterArea, setColFilterArea] = useState('Todas');
+  const [colFilterEstado, setColFilterEstado] = useState('Todos');
+  const [showTextFilters, setShowTextFilters] = useState(false);
+  const [textFilterEquipo, setTextFilterEquipo] = useState('');
+  const [textFilterArea, setTextFilterArea] = useState('');
+  const [textFilterEstado, setTextFilterEstado] = useState('');
   
   // Estado Modo Oscuro
   const [isDarkMode, setIsDarkMode] = useState(() => {
@@ -49,6 +69,7 @@ const Dashboard = ({ onLogout }) => {
   const [newItemName, setNewItemName] = useState('');
   const [newItemStatus, setNewItemStatus] = useState(STATUS_OPTIONS[0]);
   const [newItemTerminal, setNewItemTerminal] = useState(TERMINAL_OPTIONS[0]);
+  const [newItemOwner, setNewItemOwner] = useState(TERMINAL_OPTIONS[0]);
   const [newItemArea, setNewItemArea] = useState(AREAS_GENERAL[0]);
   const [newItemQuantity, setNewItemQuantity] = useState(1);
 
@@ -105,6 +126,38 @@ const Dashboard = ({ onLogout }) => {
     });
   };
 
+  
+  // Inyección de Data Ficticia para pruebas
+  useEffect(() => {
+    if (!isLoading && inventory.length === 0) {
+      const now = nowString();
+      
+      const equiposList = ['Handheld Dolphin', 'Radio Motorola', 'Monitor Vuelo', 'Impresora Térmica', 'Balanza', 'Lector Pasaportes', 'Walkie Talkie', 'PC Desktop', 'Laptop Lenovo', 'Scanner Codigo de Barras'];
+      const mockItems = [];
+      for (let i = 1; i <= 500; i++) {
+        const terminal = TERMINAL_OPTIONS[Math.floor(Math.random() * TERMINAL_OPTIONS.length)];
+        const ownerTerminal = TERMINAL_OPTIONS[Math.floor(Math.random() * TERMINAL_OPTIONS.length)];
+        const areas = getAreasForTerminal(terminal);
+        const area = areas[Math.floor(Math.random() * areas.length)];
+        const status = STATUS_OPTIONS[Math.floor(Math.random() * STATUS_OPTIONS.length)];
+        
+        mockItems.push({
+          id: i,
+          name: equiposList[Math.floor(Math.random() * equiposList.length)],
+          quantity: Math.floor(Math.random() * 5) + 1,
+          terminal: terminal,
+          ownerTerminal: ownerTerminal,
+          area: area,
+          status: status,
+          history: [`[${now}] Equipo Registrado (Generación Masiva).`]
+        });
+      }
+
+      setInventory(mockItems);
+      addGlobalLog('Sistema', 'Se inyectó stock ficticio en todas las terminales para pruebas.');
+    }
+  }, [isLoading, inventory.length]);
+
   const uniqueTypes = useMemo(() => {
     const types = new Set(inventory.map(item => item.name));
     return ['Todos', ...Array.from(types)];
@@ -113,16 +166,81 @@ const Dashboard = ({ onLogout }) => {
   const typeSuggestions = useMemo(() => Array.from(new Set(inventory.map(i => i.name))), [inventory]);
 
   useEffect(() => {
-    if (newItemStatus === 'En Almacén') {
-      setNewItemArea('N/A');
-    } else if (newItemTerminal === 'Terminal B2') {
-      setNewItemArea('ML');
-    } else {
-      if (!AREAS_GENERAL.includes(newItemArea) || newItemArea === 'ML' || newItemArea === 'N/A') {
-         setNewItemArea(AREAS_GENERAL[0]);
-      }
+    const allowedAreas = getAreasForTerminal(newItemTerminal);
+    if (!allowedAreas.includes(newItemArea)) {
+        setNewItemArea(allowedAreas[0]);
     }
   }, [newItemTerminal, newItemStatus]);
+  
+  useEffect(() => {
+    // When editing, also validate area
+    if (editFormData && editFormData.terminal) {
+       const allowedAreas = getAreasForTerminal(editFormData.terminal);
+       if (!allowedAreas.includes(editFormData.area)) {
+          setEditFormData({...editFormData, area: allowedAreas[0]});
+       }
+    }
+  }, [editFormData?.terminal, editFormData?.status]);
+
+  
+  useEffect(() => {
+    const handleClickOutside = () => setActiveDropdown(null);
+    window.addEventListener('click', handleClickOutside);
+    return () => window.removeEventListener('click', handleClickOutside);
+  }, []);
+
+  
+  const handleExcelImport = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const bstr = evt.target.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
+        const wsname = wb.SheetNames[0];
+        const ws = wb.Sheets[wsname];
+        const data = XLSX.utils.sheet_to_json(ws);
+        
+        let newItems = [];
+        let validAreas = getAvailableAreas('Terminal A'); // Default fallback
+        
+        data.forEach((row, index) => {
+          const terminal = row['Terminal'] || row['terminal'] || 'Terminal A';
+          const areaOptions = getAvailableAreas(terminal);
+          const rawArea = row['Area'] || row['area'] || row['Área'] || row['área'];
+          const area = areaOptions.includes(rawArea) ? rawArea : areaOptions[0];
+          const status = row['Estado'] || row['estado'] || 'En uso';
+          
+          newItems.push({
+            id: Date.now() + Math.random() + index,
+            name: row['Nombre'] || row['nombre'] || 'Equipo Genérico',
+            quantity: parseInt(row['Cantidad'] || row['cantidad']) || 1,
+            terminal: terminal,
+            ownerTerminal: row['Propietario'] || row['propietario'] || terminal,
+            area: area,
+            status: status,
+            history: [`[${nowString()}] Importado desde Excel`]
+          });
+        });
+
+        if (newItems.length > 0) {
+           saveInventory([...inventory, ...newItems]);
+           addGlobalLog(currentUser, `Importación masiva: Se cargaron ${newItems.length} equipos desde Excel.`);
+           alert(`Excel cargado exitosamente. Se agregaron ${newItems.length} equipos.`);
+        } else {
+           alert("El archivo no contenía datos válidos.");
+        }
+      } catch (err) {
+        console.error(err);
+        alert("Error al procesar el archivo Excel. Revisa el formato.");
+      }
+    };
+    reader.readAsBinaryString(file);
+    e.target.value = null; // reset input
+  };
+
 
   const handleAddItem = (e) => {
     e.preventDefault();
@@ -170,8 +288,9 @@ const Dashboard = ({ onLogout }) => {
       name: newItemName.trim(),
       status: newItemStatus,
       terminal: newItemTerminal,
+      ownerTerminal: newItemOwner,
       owner: newItemTerminal,
-      area: newItemStatus === 'En Almacén' ? 'N/A' : newItemArea,
+      area: newItemArea,
       quantity: qty,
       image: newItemImage,
       history: [`[${now}] Equipo Registrado. Estado Inicial: ${newItemStatus}. Cantidad: ${qty}.`, ...autoDeductedLogs]
@@ -214,7 +333,7 @@ const Dashboard = ({ onLogout }) => {
       return;
     }
 
-    const finalArea = editFormData.status === 'En Almacén' ? 'N/A' : editFormData.area;
+    const finalArea = editFormData.area;
 
     const original = inventory.find(i => i.id === id);
     
@@ -375,27 +494,50 @@ const Dashboard = ({ onLogout }) => {
     setEditFormData(prev => {
       let updated = { ...prev, [field]: val };
       if (field === 'terminal' && val === 'Terminal B2' && updated.status !== 'En Almacén') updated.area = 'ML';
-      if (field === 'status' && val === 'En Almacén') updated.area = 'N/A';
+      
       if (field === 'status' && prev.status === 'En Almacén' && val !== 'En Almacén') updated.area = getAvailableAreas(updated.terminal)[0];
       return updated;
     });
   };
-  const getAvailableAreas = (terminal) => terminal === 'Terminal B2' ? AREAS_B2 : AREAS_GENERAL;
+  const getAvailableAreas = (terminal) => {
+    if (terminal === 'Terminal A') return AREAS_A;
+    if (terminal === 'Terminal B') return AREAS_B;
+    if (terminal === 'Terminal B2') return AREAS_B2;
+    return AREAS_GENERAL;
+  };
 
   // Filtrado de inventario para la vista principal
-  const filteredInventory = inventory.filter(item => {
-    const matchTerminal = filterTerminal === 'Todas' ? true : item.terminal === filterTerminal;
+  const chartInventory = inventory.filter(item => {
+    let matchTerminal = filterTerminal === 'Todas' ? true : item.terminal === filterTerminal;
+    if (filterIsProperty && filterTerminal !== 'Todas') {
+       matchTerminal = item.ownerTerminal === filterTerminal && item.terminal !== filterTerminal;
+    }
     const matchStatus = filterStatus === 'Todos' ? true : item.status === filterStatus;
     const matchType = filterType === 'Todos' ? true : item.name === filterType;
     return matchTerminal && matchStatus && matchType;
   });
 
+  const filteredInventory = inventory.filter(item => {
+    let matchTerminal = filterTerminal === 'Todas' ? true : item.terminal === filterTerminal;
+    if (filterIsProperty && filterTerminal !== 'Todas') {
+       matchTerminal = item.ownerTerminal === filterTerminal && item.terminal !== filterTerminal;
+    }
+    const matchStatus = filterStatus === 'Todos' ? true : item.status === filterStatus;
+    const matchType = filterType === 'Todos' ? true : item.name === filterType;
+
+    const matchTextEquipo = item.name.toLowerCase().includes(textFilterEquipo.toLowerCase());
+    const matchTextArea = (item.area || '').toLowerCase().includes(textFilterArea.toLowerCase());
+    const matchTextEstado = (item.status || '').toLowerCase().includes(textFilterEstado.toLowerCase());
+
+    return matchTerminal && matchStatus && matchType && matchTextEquipo && matchTextArea && matchTextEstado;
+  });
+
   const getChartData = () => {
     let dataMap = {};
     if (filterTerminal === 'Todas') {
-      filteredInventory.forEach(item => { dataMap[item.terminal] = (dataMap[item.terminal] || 0) + item.quantity; });
+      chartInventory.forEach(item => { dataMap[item.terminal] = (dataMap[item.terminal] || 0) + item.quantity; });
     } else {
-      filteredInventory.forEach(item => { 
+      chartInventory.forEach(item => { 
         dataMap[item.status] = (dataMap[item.status] || 0) + item.quantity; 
       });
     }
@@ -408,7 +550,7 @@ const Dashboard = ({ onLogout }) => {
   // Excluimos "Decomisado" del cálculo total real para no inflar métricas con basura
   const totalItems = filteredInventory.filter(i => i.status !== 'Decomisado').reduce((acc, curr) => acc + curr.quantity, 0);
   const operativosItems = filteredInventory.filter(i => i.status.startsWith('En uso')).reduce((acc, curr) => acc + curr.quantity, 0);
-  const danadosItems = filteredInventory.filter(i => i.status.startsWith('Dañado')).reduce((acc, curr) => acc + curr.quantity, 0);
+  const danadosItems = filteredInventory.filter(i => i.status.startsWith('Inhabilitado')).reduce((acc, curr) => acc + curr.quantity, 0);
   
   // KPI de Préstamos: ¿Cuántos equipos PROPIEDAD de la terminal actual (filtro) están ubicados físicamente en otra terminal?
   // Esto analiza todo el inventario base, no el inventario filtrado, para detectar equipos que salieron de su frontera.
@@ -421,17 +563,18 @@ const Dashboard = ({ onLogout }) => {
   return (
     <div style={{ padding: '80px 20px 60px 20px', maxWidth: '1400px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '20px' }} className="dashboard-container">
       
-      <nav className="top-nav no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <nav className="top-nav no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px' }}>
         <div className="top-nav-group-logo" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <img src="/logo-app.png" alt="Logo" style={{ height: '48px', objectFit: 'contain' }} />
           <h2 style={{ margin: 0, color: 'var(--q-accent)', fontWeight: 900 }}>Stock <span style={{ color: 'var(--text-main)', fontWeight: 300 }}>Terminal</span></h2>
         </div>
-        <div className="top-nav-group-actions" style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
+        <div className="top-nav-group-actions" style={{ display: 'flex', gap: '15px', alignItems: 'center', flexWrap: 'wrap' }}>
           
           <button onClick={() => setIsDarkMode(!isDarkMode)} className="dark-mode-btn" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--q-dark)', display: 'flex', alignItems: 'center' }} title="Alternar Modo Oscuro">
             {isDarkMode ? <Sun size={24} /> : <Moon size={24} />}
           </button>
 
+          
           <button onClick={() => setIsAddModalOpen(true)} className="btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
             <Plus size={18} /> NUEVO EQUIPO
           </button>
@@ -465,6 +608,14 @@ const Dashboard = ({ onLogout }) => {
             {uniqueTypes.map(t => <option key={t} value={t}>{t}</option>)}
           </select>
         </div>
+        {filterTerminal !== 'Todas' && (
+          <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', paddingTop: '15px' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: 'bold', color: 'var(--q-dark)', cursor: 'pointer' }}>
+              <input type="checkbox" checked={filterIsProperty} onChange={(e) => setFilterIsProperty(e.target.checked)} style={{ transform: 'scale(1.2)' }} />
+              Ver Propiedad Externa
+            </label>
+          </div>
+        )}
       </div>
 
       {/* KPI Cards */}
@@ -475,20 +626,20 @@ const Dashboard = ({ onLogout }) => {
         prestadosItems={prestadosItems} 
       />
 
-      <div className="dashboard-grid">
-        {/* Gráfico Analítico (Ocupa todo el ancho ahora) */}
-        <div className="material-card no-print" style={{ padding: '20px', height: '350px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+      <div className="dashboard-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+        {/* Gráfico Analítico */}
+        <div className="material-card no-print" style={{ padding: '20px', height: '420px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
           <h3 style={{ color: 'var(--q-dark)', marginBottom: '0px', fontSize: '16px' }}>
             Distribución ({filterTerminal === 'Todas' ? 'por Terminales' : 'por Estados'})
           </h3>
           {chartData.length > 0 ? (
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
-                <Pie data={chartData} cx="50%" cy="50%" innerRadius={60} outerRadius={110} paddingAngle={2} dataKey="value">
-                  {chartData.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
+                <Pie data={chartData} cx="50%" cy="45%" innerRadius={70} outerRadius={120} paddingAngle={2} dataKey="value">
+                  {chartData.map((entry, index) => <Cell key={`cell-${index}`} fill={STATUS_COLORS[entry.name] || '#333'} />)}
                 </Pie>
                 <Tooltip formatter={(value, name) => [`${value} Equipos`, name]} />
-                <Legend />
+                <Legend wrapperStyle={{ paddingTop: '20px' }} />
               </PieChart>
             </ResponsiveContainer>
           ) : (
@@ -496,17 +647,42 @@ const Dashboard = ({ onLogout }) => {
           )}
         </div>
 
-        {/* Panel Principal: Tabla */}
+        {/* Google Maps Embed */}
+        <div className="material-card no-print" style={{ height: '420px', overflow: 'hidden', padding: 0, position: 'relative' }}>
+          <iframe 
+            src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d15124.93922617654!2d-68.37568582236329!3d18.563539999999998!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x8ea8eb7bd9b78b0f%3A0x6b87640b7194f131!2sPunta%20Cana%20International%20Airport!5e1!3m2!1sen!2sdo!4v1714421101962!5m2!1sen!2sdo" 
+            width="100%" 
+            height="100%" 
+            style={{ border: 0 }} 
+            allowFullScreen="" 
+            loading="lazy" 
+            referrerPolicy="no-referrer-when-downgrade"
+          ></iframe>
+        </div>
+      </div>
+
+      {/* Panel Principal: Tabla */}
         <div className="material-card" style={{ padding: '20px' }}>
           <div className="table-header-container" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
             <h3 style={{ color: 'var(--q-dark)', margin: 0 }}>
               Detalle de Inventario ({totalItems} unidades)
             </h3>
             <div style={{ display: 'flex', gap: '10px' }} className="no-print">
+              <button onClick={() => setShowTextFilters(!showTextFilters)} className="btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: '5px', background: showTextFilters ? 'var(--q-accent)' : '', color: showTextFilters ? 'white' : '' }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
+                Filtrar
+              </button>
+              <button onClick={() => setIsGlobalLogOpen(true)} className="btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <Activity size={16} /> Histórico
+              </button>
               <button onClick={() => window.print()} className="btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
                 Imprimir
               </button>
+              <label className="btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer', background: 'var(--q-info)', color: 'white', border: 'none' }}>
+                <Upload size={16} /> Importar Excel
+                <input type="file" accept=".xlsx, .xls, .csv" style={{ display: 'none' }} onChange={handleExcelImport} />
+              </label>
               <button onClick={exportToCSV} className="btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
                 Exportar CSV
@@ -514,6 +690,13 @@ const Dashboard = ({ onLogout }) => {
             </div>
           </div>
 
+          {showTextFilters && (
+            <div style={{ display: 'flex', gap: '15px', marginBottom: '20px', padding: '15px', background: 'var(--q-primary)', borderRadius: '8px', border: '1px solid var(--q-secondary)' }}>
+              <input type="text" placeholder="Buscar por Equipo..." value={textFilterEquipo} onChange={(e) => setTextFilterEquipo(e.target.value)} style={{ flex: 1, padding: '8px 12px', border: '1px solid #ddd', borderRadius: '4px', outline: 'none' }} />
+              <input type="text" placeholder="Buscar por Área..." value={textFilterArea} onChange={(e) => setTextFilterArea(e.target.value)} style={{ flex: 1, padding: '8px 12px', border: '1px solid #ddd', borderRadius: '4px', outline: 'none' }} />
+              <input type="text" placeholder="Buscar por Estado..." value={textFilterEstado} onChange={(e) => setTextFilterEstado(e.target.value)} style={{ flex: 1, padding: '8px 12px', border: '1px solid #ddd', borderRadius: '4px', outline: 'none' }} />
+            </div>
+          )}
           <div className="table-wrapper" style={{ overflowX: 'auto', maxHeight: '600px' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', backgroundColor: 'white' }}>
               <thead>
@@ -563,8 +746,8 @@ const Dashboard = ({ onLogout }) => {
                           </select>
                         </td>
                         <td style={{ padding: '8px' }}>
-                          <select value={editFormData.area} onChange={(e) => handleEditFormChange(e, 'area')} disabled={editFormData.status === 'En Almacén'} style={{ opacity: editFormData.status === 'En Almacén' ? 0.5 : 1 }}>
-                            {editFormData.status === 'En Almacén' ? <option value="N/A">N/A (Almacén)</option> : getAvailableAreas(editFormData.terminal).map(a => <option key={a} value={a}>{a}</option>)}
+                          <select value={editFormData.area} onChange={(e) => handleEditFormChange(e, 'area')}  style={{ opacity: editFormData.status === 'En Almacén' ? 0.5 : 1 }}>
+                            {getAvailableAreas(editFormData.terminal).map(a => <option key={a} value={a}>{a}</option>)}
                           </select>
                         </td>
                         <td style={{ padding: '8px' }}>
@@ -661,7 +844,6 @@ const Dashboard = ({ onLogout }) => {
             </table>
           </div>
         </div>
-      </div>
       
       {/* Modal Añadir Nuevo Equipo */}
       {isAddModalOpen && (
@@ -687,8 +869,8 @@ const Dashboard = ({ onLogout }) => {
                 </div>
                 <div style={{ flex: 1 }}>
                   <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)' }}>Área</label>
-                  <select value={newItemArea} onChange={(e) => setNewItemArea(e.target.value)} disabled={newItemStatus === 'En Almacén'} style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px', opacity: newItemStatus === 'En Almacén' ? 0.5 : 1 }}>
-                    {newItemStatus === 'En Almacén' ? <option value="N/A">N/A (Almacén)</option> : getAvailableAreas(newItemTerminal).map(area => <option key={area} value={area}>{area}</option>)}
+                  <select value={newItemArea} onChange={(e) => setNewItemArea(e.target.value)}  style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px', opacity: newItemStatus === 'En Almacén' ? 0.5 : 1 }}>
+                    {getAvailableAreas(newItemTerminal).map(area => <option key={area} value={area}>{area}</option>)}
                   </select>
                 </div>
               </div>
@@ -728,8 +910,8 @@ const Dashboard = ({ onLogout }) => {
                   <label style={{ 
                     cursor: 'pointer', 
                     padding: '8px 12px', 
-                    backgroundColor: '#f1f5f9', 
-                    border: '1px solid #cbd5e1', 
+                    backgroundColor: 'var(--q-secondary)', 
+                    border: '1px solid var(--table-border)', 
                     borderRadius: '4px', 
                     fontSize: '13px',
                     display: 'inline-flex',

@@ -14,7 +14,7 @@ const KPICards = ({ totalItems, operativosItems, danadosItems, prestadosItems })
          <h3 className="kpi-value" style={{ color: '#27ae60' }}>{operativosItems}</h3>
       </div>
       <div className="kpi-card" style={{ borderBottomColor: '#e74c3c' }}>
-         <span className="kpi-title">Dañados</span>
+         <span className="kpi-title">Inhabilitados</span>
          <h3 className="kpi-value" style={{ color: '#e74c3c' }}>{danadosItems}</h3>
       </div>
       <div className="kpi-card" style={{ borderBottomColor: '#f39c12' }} title="Equipos prestados a otras áreas/terminales">

@@ -19,9 +19,31 @@ export function useInventory() {
         
         const storedLogs = await localforage.getItem('gpc_global_logs');
         if (storedLogs) setGlobalLogs(storedLogs);
+        
         if (storedInventory) {
-          setInventory(storedInventory);
+          // Migration: 'Dañado' -> 'Inhabilitado' and add ownerTerminal
+          let migrated = false;
+          const newInv = storedInventory.map(item => {
+            let changed = false;
+            let newItem = { ...item };
+            if (newItem.status === 'Dañado') { newItem.status = 'Inhabilitado'; changed = true; }
+            if (!newItem.ownerTerminal) { newItem.ownerTerminal = newItem.terminal; changed = true; }
+            if (newItem.area === 'N/A') {
+              // Migration to remove N/A
+              newItem.area = newItem.terminal === 'Terminal B2' ? 'Gate 27' : 'Gate 1';
+              changed = true;
+            }
+            if (changed) migrated = true;
+            return newItem;
+          });
+          if (migrated) {
+            localforage.setItem('gpc_inventory', newInv);
+            setInventory(newInv);
+          } else {
+            setInventory(storedInventory);
+          }
         } else {
+
           // Check if there is data in localStorage to migrate (Legacy)
           const legacyData = localStorage.getItem('gpc_inventory');
           if (legacyData) {
