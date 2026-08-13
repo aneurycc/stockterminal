@@ -675,7 +675,7 @@ const Dashboard = ({ onLogout }) => {
         {/* Google Maps Embed */}
         <div className="material-card no-print" style={{ height: '420px', overflow: 'hidden', padding: 0, position: 'relative' }}>
           <iframe 
-            src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d15124.93922617654!2d-68.37568582236329!3d18.563539999999998!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x8ea8eb7bd9b78b0f%3A0x6b87640b7194f131!2sPunta%20Cana%20International%20Airport!5e1!3m2!1sen!2sdo!4v1714421101962!5m2!1sen!2sdo" 
+            src="https://maps.google.com/maps?q=18.56354,-68.375685&t=k&z=16&ie=UTF8&iwloc=&output=embed" 
             width="100%" 
             height="100%" 
             style={{ border: 0 }} 
