@@ -11,14 +11,12 @@ const nowString = () => new Date().toLocaleString();
 const initialInventory = [];
 
 // NOTA: Se ha eliminado "Prestado" porque ahora es una relación estructural (owner !== terminal)
-const STATUS_OPTIONS = ['En uso', 'En Almacén', 'Inhabilitado', 'Decomisado', 'En reparación', 'Por reparar', 'Por decomisar'];
+const STATUS_OPTIONS = ['En uso', 'En Almacén', 'Inhabilitado', 'Decomisado', 'En reparación', 'Por reparar', 'En proceso de decomiso'];
 const TERMINAL_OPTIONS = ['Terminal A', 'Terminal B', 'Terminal B2'];
-const BASE_AREAS = ['Facturacion C1', 'Facturacion C2', 'Facturacion C3', 'Facturacion C4', 'SG', 'CC', 'MS', 'ML', 'AD', 'Foodcourt', 'Oficina'];
-const AREAS_GENERAL = BASE_AREAS;
-const AREAS_A = [...BASE_AREAS, 'Gate 1', 'Gate 2', 'Gate 3', 'Gate 4', 'Gate 5', 'Gate 6', 'Gate 7', 'Gate 8', 'Gate 9', 'Gate 10', 'Gate 11', 'Gate 12', 'Gate 13', 'Gate 14', 'Gate 15', 'Gate 16'];
-const AREAS_B = [...BASE_AREAS, 'Gate 20', 'Gate 21', 'Gate 22', 'Gate 23', 'Gate 24', 'Gate 25', 'Gate 26F'];
-const BASE_AREAS_B2 = ['Foodcourt', 'ML', 'Oficina'];
-const AREAS_B2 = [...BASE_AREAS_B2, 'Gate 27', 'Gate 28', 'Gate 29', 'Gate 30', 'Gate 31'];
+const AREAS_A = ['Check-in Terminal A', 'Check Point TA', 'Migración Salidas TA', 'Sala de embarque A1', 'Sala de embarque A2', 'Food Court TA', 'Pasillo Llegadas', 'Sala Migración Llegadas', 'Migración Llegadas TA', 'Reclamo de equipajes TA', 'Aduanas TA', 'Área comercial (tienda) TA', 'Oficina TA', 'Pasillo TA', 'Gate 1', 'Gate 2', 'Gate 3', 'Gate 4', 'Gate 5', 'Gate 6', 'Gate 7', 'Gate 8', 'Gate 9', 'Gate 10', 'Gate 11', 'Gate 12', 'Gate 13', 'Gate 14', 'Gate 15', 'Gate 16', 'Paxer TA'];
+const AREAS_B = ['Correas de check in 1 y 2', 'Correas de check in 3 y 4', 'Check Point TB', 'Migración Salidas TB', 'Sala de embarque B1', 'Food Court TB', 'Pasillo Llegadas', 'Sala Migración Llegadas', 'Migración Llegadas TB', 'Reclamo de equipajes 11-13', 'Reclamo de equipajes 14-18', 'Aduanas TB', 'Área comercial (tienda) TB', 'Oficina TB', 'Pasillo TB', 'Gate 20', 'Gate 21', 'Gate 22', 'Gate 23', 'Gate 24', 'Gate 25', 'Gate 26', 'Gate 26F', 'Security Gate TB'];
+const AREAS_B2 = ['Food Court TB2', 'Migración Llegadas TB2', 'Oficina', 'Gate 27', 'Gate 28', 'Gate 29', 'Gate 30', 'Gate 31'];
+const AREAS_GENERAL = [...new Set([...AREAS_A, ...AREAS_B, ...AREAS_B2])];
 
 const getAreasForTerminal = (term) => {
   if (term === 'Terminal A') return AREAS_A;
@@ -54,6 +52,15 @@ const Dashboard = ({ onLogout }) => {
   });
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const viewId = params.get('view');
+    if (viewId) {
+      const itemToView = inventory.find(i => i.id === viewId);
+      if (itemToView) setShareItemView(itemToView);
+    }
+  }, [inventory]);
+
+  useEffect(() => {
     if (isDarkMode) {
       document.body.setAttribute('data-theme', 'dark');
       localStorage.setItem('gpc_theme', 'dark');
@@ -83,6 +90,11 @@ const Dashboard = ({ onLogout }) => {
   const [newItemImage, setNewItemImage] = useState(null);
   const [selectedImage, setSelectedImage] = useState(null);
   const [activePhotoIdx, setActivePhotoIdx] = useState(0);
+  const [sortConfig, setSortConfig] = useState({ key: null, direction: 'ascending' });
+  const [newItemIsFixedAsset, setNewItemIsFixedAsset] = useState(false);
+  const [newItemAssetNumber, setNewItemAssetNumber] = useState('');
+  const [filterOwner, setFilterOwner] = useState('Todos');
+  const [shareItemView, setShareItemView] = useState(null);
 
   const handleOpenGallery = (item) => {
     setSelectedImage(item);
@@ -132,30 +144,7 @@ const Dashboard = ({ onLogout }) => {
     if (!isLoading && inventory.length === 0) {
       const now = nowString();
       
-      const equiposList = ['Handheld Dolphin', 'Radio Motorola', 'Monitor Vuelo', 'Impresora Térmica', 'Balanza', 'Lector Pasaportes', 'Walkie Talkie', 'PC Desktop', 'Laptop Lenovo', 'Scanner Codigo de Barras'];
-      const mockItems = [];
-      for (let i = 1; i <= 500; i++) {
-        const terminal = TERMINAL_OPTIONS[Math.floor(Math.random() * TERMINAL_OPTIONS.length)];
-        const ownerTerminal = TERMINAL_OPTIONS[Math.floor(Math.random() * TERMINAL_OPTIONS.length)];
-        const areas = getAreasForTerminal(terminal);
-        const area = areas[Math.floor(Math.random() * areas.length)];
-        const status = STATUS_OPTIONS[Math.floor(Math.random() * STATUS_OPTIONS.length)];
-        
-        mockItems.push({
-          id: i,
-          name: equiposList[Math.floor(Math.random() * equiposList.length)],
-          quantity: Math.floor(Math.random() * 5) + 1,
-          terminal: terminal,
-          ownerTerminal: ownerTerminal,
-          area: area,
-          status: status,
-          history: [`[${now}] Equipo Registrado (Generación Masiva).`]
-        });
-      }
-
-      setInventory(mockItems);
-      addGlobalLog('Sistema', 'Se inyectó stock ficticio en todas las terminales para pruebas.');
-    }
+          }
   }, [isLoading, inventory.length]);
 
   const uniqueTypes = useMemo(() => {
@@ -291,6 +280,8 @@ const Dashboard = ({ onLogout }) => {
       ownerTerminal: newItemOwner,
       owner: newItemTerminal,
       area: newItemArea,
+      isFixedAsset: newItemIsFixedAsset,
+      assetNumber: newItemIsFixedAsset ? newItemAssetNumber : '',
       quantity: qty,
       image: newItemImage,
       history: [`[${now}] Equipo Registrado. Estado Inicial: ${newItemStatus}. Cantidad: ${qty}.`, ...autoDeductedLogs]
@@ -301,6 +292,8 @@ const Dashboard = ({ onLogout }) => {
     setNewItemName(''); 
     setNewItemQuantity(1);
     setNewItemImage(null);
+    setNewItemIsFixedAsset(false);
+    setNewItemAssetNumber('');
     setIsAddModalOpen(false); 
   };
 
@@ -395,6 +388,8 @@ const Dashboard = ({ onLogout }) => {
         area: finalArea,
         id: Date.now(),
         name: editFormData.name.trim(),
+        isFixedAsset: editFormData.isFixedAsset,
+        assetNumber: editFormData.isFixedAsset ? editFormData.assetNumber : '',
         quantity: parsedQty,
         image: editNewImage || original.image,
         images: childImages.length > 0 ? childImages : undefined,
@@ -422,6 +417,8 @@ const Dashboard = ({ onLogout }) => {
         owner: newOwner,
         area: finalArea,
         name: editFormData.name.trim(),
+        isFixedAsset: editFormData.isFixedAsset,
+        assetNumber: editFormData.isFixedAsset ? editFormData.assetNumber : '',
         quantity: parsedQty,
         image: editNewImage || original.image,
         images: imagesArray.length > 0 ? imagesArray : undefined,
@@ -529,8 +526,33 @@ const Dashboard = ({ onLogout }) => {
     const matchTextArea = (item.area || '').toLowerCase().includes(textFilterArea.toLowerCase());
     const matchTextEstado = (item.status || '').toLowerCase().includes(textFilterEstado.toLowerCase());
 
-    return matchTerminal && matchStatus && matchType && matchTextEquipo && matchTextArea && matchTextEstado;
+    let matchOwner = filterOwner === 'Todos' ? true : item.owner === filterOwner;
+    return matchTerminal && matchStatus && matchType && matchTextEquipo && matchTextArea && matchTextEstado && matchOwner;
   });
+
+  const sortedInventory = React.useMemo(() => {
+    let sortableItems = [...filteredInventory];
+    if (sortConfig.key !== null) {
+      sortableItems.sort((a, b) => {
+        let valA = a[sortConfig.key] || '';
+        let valB = b[sortConfig.key] || '';
+        if (typeof valA === 'string') valA = valA.toLowerCase();
+        if (typeof valB === 'string') valB = valB.toLowerCase();
+        if (valA < valB) return sortConfig.direction === 'ascending' ? -1 : 1;
+        if (valA > valB) return sortConfig.direction === 'ascending' ? 1 : -1;
+        return 0;
+      });
+    }
+    return sortableItems;
+  }, [filteredInventory, sortConfig]);
+
+  const requestSort = (key) => {
+    let direction = 'ascending';
+    if (sortConfig.key === key && sortConfig.direction === 'ascending') {
+      direction = 'descending';
+    }
+    setSortConfig({ key, direction });
+  };
 
   const getChartData = () => {
     let dataMap = {};
@@ -549,6 +571,7 @@ const Dashboard = ({ onLogout }) => {
   // KPIs
   // Excluimos "Decomisado" del cálculo total real para no inflar métricas con basura
   const totalItems = filteredInventory.filter(i => i.status !== 'Decomisado').reduce((acc, curr) => acc + curr.quantity, 0);
+  const tableTotalItems = filteredInventory.reduce((acc, curr) => acc + curr.quantity, 0);
   const operativosItems = filteredInventory.filter(i => i.status.startsWith('En uso')).reduce((acc, curr) => acc + curr.quantity, 0);
   const danadosItems = filteredInventory.filter(i => i.status.startsWith('Inhabilitado')).reduce((acc, curr) => acc + curr.quantity, 0);
   
@@ -667,7 +690,7 @@ const Dashboard = ({ onLogout }) => {
         <div className="material-card" style={{ padding: '20px' }}>
           <div className="table-header-container" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
             <h3 style={{ color: 'var(--q-dark)', margin: 0 }}>
-              Detalle de Inventario ({totalItems} unidades)
+              Detalle de Inventario ({tableTotalItems} unidades)
             </h3>
             <div style={{ display: 'flex', gap: '10px' }} className="no-print">
               <button onClick={() => setShowTextFilters(!showTextFilters)} className="btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: '5px', background: showTextFilters ? 'var(--q-accent)' : '', color: showTextFilters ? 'white' : '' }}>
@@ -1050,7 +1073,20 @@ const Dashboard = ({ onLogout }) => {
                 <Activity size={24} color="var(--q-accent)" />
                 <h3 style={{ margin: 0, color: 'var(--q-dark)' }}>Auditoría Global de Actividades</h3>
               </div>
-              <button onClick={() => setIsGlobalLogOpen(false)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '20px', color: 'var(--text-muted)' }}>✖</button>
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                <button onClick={() => {
+                  if(!globalLogs || globalLogs.length===0) return alert('No hay logs para exportar');
+                  const headers = ['Fecha', 'Usuario', 'Acción'];
+                  const csvRows = [headers.join(',')];
+                  globalLogs.forEach(l => csvRows.push(`"${l.date}","${l.user}","${l.action.replace(/"/g, '""')}"`));
+                  const blob = new Blob([csvRows.join('\n')], { type: 'text/csv' });
+                  const url = window.URL.createObjectURL(blob);
+                  const a = document.createElement('a'); a.href = url; a.download = 'auditoria_global.csv'; a.click();
+                }} className="btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                  <Download size={16} /> Exportar
+                </button>
+                <button onClick={() => setIsGlobalLogOpen(false)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '20px', color: 'var(--text-muted)' }}>✖</button>
+              </div>
             </div>
             
             <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px', paddingRight: '10px' }}>
@@ -1066,6 +1102,58 @@ const Dashboard = ({ onLogout }) => {
                 <p style={{ textAlign: 'center', color: 'var(--text-muted)', margin: '40px 0' }}>No hay actividades registradas en la caja negra.</p>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Lectura (Compartido) */}
+      {shareItemView && (
+        <div className="modal-overlay" style={{ background: 'rgba(255,255,255,0.95)' }}>
+          <div className="material-card" style={{ padding: '30px', width: '100%', maxWidth: '600px', display: 'flex', flexDirection: 'column', gap: '20px', position: 'relative' }}>
+            <button onClick={() => setShareItemView(null)} style={{ position: 'absolute', top: '15px', right: '15px', background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '24px', color: 'var(--text-muted)' }}>✖</button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '20px', borderBottom: '2px solid var(--q-secondary)', paddingBottom: '20px' }}>
+              <img src="/logo-app.png" alt="Logo" style={{ height: '40px', objectFit: 'contain' }} />
+              <div>
+                <h2 style={{ margin: 0, color: 'var(--q-dark)' }}>Ficha de Equipo</h2>
+                <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '14px' }}>ID: {shareItemView.id}</p>
+              </div>
+            </div>
+            
+            <div style={{ display: 'flex', gap: '20px' }}>
+              {shareItemView.image ? (
+                <img src={shareItemView.image} alt="Equipo" style={{ width: '150px', height: '150px', objectFit: 'cover', borderRadius: '8px', border: '1px solid #eee' }} />
+              ) : (
+                <div style={{ width: '150px', height: '150px', background: '#f5f5f5', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ccc' }}>Sin foto</div>
+              )}
+              
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <h3 style={{ margin: 0, fontSize: '24px', color: 'var(--q-accent)' }}>{shareItemView.name}</h3>
+                {shareItemView.isFixedAsset && (
+                  <span style={{ background: 'var(--q-primary)', padding: '4px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold', display: 'inline-block', alignSelf: 'flex-start' }}>ACTIVO # {shareItemView.assetNumber}</span>
+                )}
+                
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginTop: '10px' }}>
+                  <div>
+                    <label style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Ubicación</label>
+                    <div style={{ fontSize: '15px', fontWeight: '500' }}>{shareItemView.terminal}</div>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Área</label>
+                    <div style={{ fontSize: '15px', fontWeight: '500' }}>{shareItemView.area}</div>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Estado</label>
+                    <div style={{ fontSize: '15px', fontWeight: 'bold', color: 'var(--q-info)' }}>{shareItemView.status}</div>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Propiedad de</label>
+                    <div style={{ fontSize: '15px', fontWeight: '500' }}>{shareItemView.owner || shareItemView.terminal}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <p style={{ textAlign: 'center', fontSize: '12px', color: 'var(--text-muted)', margin: 0, marginTop: '20px' }}>Vista generada por Stock Terminal - Acceso de Sólo Lectura</p>
           </div>
         </div>
       )}
