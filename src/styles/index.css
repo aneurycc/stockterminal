@@ -299,7 +299,7 @@ tr:hover {
     grid-template-columns: 1fr;
   }
   .top-nav {
-    padding: 15px 20px;
+    padding: 15px 0;
   }
   .master-filters {
     flex-direction: column;
@@ -398,7 +398,7 @@ tr:hover {
   .top-nav {
     flex-direction: column !important;
     gap: 15px;
-    padding: 15px !important;
+    padding: 15px 0 !important;
     position: relative !important;
   }
   .top-nav-group-logo {

@@ -563,24 +563,26 @@ const Dashboard = ({ onLogout }) => {
   return (
     <div style={{ padding: '80px 20px 60px 20px', maxWidth: '1400px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '20px' }} className="dashboard-container">
       
-      <nav className="top-nav no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px' }}>
-        <div className="top-nav-group-logo" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <img src="/logo-app.png" alt="Logo" style={{ height: '48px', objectFit: 'contain' }} />
-          <h2 style={{ margin: 0, color: 'var(--q-accent)', fontWeight: 900 }}>Stock <span style={{ color: 'var(--text-main)', fontWeight: 300 }}>Terminal</span></h2>
-        </div>
-        <div className="top-nav-group-actions" style={{ display: 'flex', gap: '15px', alignItems: 'center', flexWrap: 'wrap' }}>
-          
-          <button onClick={() => setIsDarkMode(!isDarkMode)} className="dark-mode-btn" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--q-dark)', display: 'flex', alignItems: 'center' }} title="Alternar Modo Oscuro">
-            {isDarkMode ? <Sun size={24} /> : <Moon size={24} />}
-          </button>
+      <nav className="top-nav no-print" style={{ width: '100%', boxSizing: 'border-box', left: 0 }}>
+        <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '0 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px', width: '100%', boxSizing: 'border-box' }}>
+          <div className="top-nav-group-logo" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <img src="/logo-app.png" alt="Logo" style={{ height: '48px', objectFit: 'contain' }} />
+            <h2 style={{ margin: 0, color: 'var(--q-accent)', fontWeight: 900 }}>Stock <span style={{ color: 'var(--text-main)', fontWeight: 300 }}>Terminal</span></h2>
+          </div>
+          <div className="top-nav-group-actions" style={{ display: 'flex', gap: '15px', alignItems: 'center', flexWrap: 'wrap' }}>
+            
+            <button onClick={() => setIsDarkMode(!isDarkMode)} className="dark-mode-btn" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--q-dark)', display: 'flex', alignItems: 'center' }} title="Alternar Modo Oscuro">
+              {isDarkMode ? <Sun size={24} /> : <Moon size={24} />}
+            </button>
 
-          
-          <button onClick={() => setIsAddModalOpen(true)} className="btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-            <Plus size={18} /> NUEVO EQUIPO
-          </button>
-          <button onClick={onLogout} className="btn-danger">
-            Cerrar Sesión
-          </button>
+            
+            <button onClick={() => setIsAddModalOpen(true)} className="btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <Plus size={18} /> NUEVO EQUIPO
+            </button>
+            <button onClick={onLogout} className="btn-danger">
+              Cerrar Sesión
+            </button>
+          </div>
         </div>
       </nav>
 
