@@ -757,6 +757,15 @@ const Dashboard = ({ onLogout }) => {
                               onChange={(e) => handleEditFormChange(e, 'name')} 
                               style={{ width: '100%', padding: '4px' }} 
                             />
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '5px' }}>
+                              <label style={{ fontSize: '11px', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                <input type="checkbox" checked={editFormData.isFixedAsset || false} onChange={(e) => setEditFormData(prev => ({ ...prev, isFixedAsset: e.target.checked }))} />
+                                Activo
+                              </label>
+                              {editFormData.isFixedAsset && (
+                                <input type="text" placeholder="# Activo" value={editFormData.assetNumber || ''} onChange={(e) => handleEditFormChange(e, 'assetNumber')} style={{ width: '80px', padding: '2px 4px', fontSize: '11px' }} />
+                              )}
+                            </div>
                           </div>
                           <datalist id="equipment-names-edit">{typeSuggestions.map(t => <option key={t} value={t} />)}</datalist>
                         </td>
@@ -924,6 +933,22 @@ const Dashboard = ({ onLogout }) => {
                     {STATUS_OPTIONS.map(status => <option key={status} value={status}>{status}</option>)}
                   </select>
                 </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '13px', color: 'var(--q-dark)', cursor: 'pointer' }}>
+                    <input type="checkbox" checked={newItemIsFixedAsset} onChange={(e) => setNewItemIsFixedAsset(e.target.checked)} />
+                    ¿Activo Fijo?
+                  </label>
+                </div>
+                {newItemIsFixedAsset && (
+                  <div style={{ flex: 2 }}>
+                    <div className="material-input-group">
+                      <input type="text" placeholder="# de Activo" value={newItemAssetNumber} onChange={(e) => setNewItemAssetNumber(e.target.value)} />
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div>
