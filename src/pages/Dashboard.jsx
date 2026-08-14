@@ -673,8 +673,13 @@ const Dashboard = ({ onLogout }) => {
         </div>
 
         {/* Google Maps Embed */}
-        <div className="material-card no-print" style={{ height: '420px', overflow: 'hidden', padding: 0, position: 'relative' }}>
-          <img src="/mapa-estatico.jpg" alt="Mapa de Terminales" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        <div className="material-card no-print" style={{ height: '420px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#f8fafc', border: '2px dashed #cbd5e1' }}>
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: '16px' }}>
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+          </svg>
+          <h2 style={{ color: '#64748b', margin: '0 0 8px 0', fontSize: '24px' }}>Coming Soon</h2>
+          <p style={{ color: '#94a3b8', margin: 0, fontSize: '16px' }}>Módulo de Almacenes en desarrollo</p>
         </div>
       </div>
 
