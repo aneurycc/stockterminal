@@ -12,7 +12,7 @@ const nowString = () => new Date().toLocaleString();
 const initialInventory = [];
 
 // NOTA: Se ha eliminado "Prestado" porque ahora es una relación estructural (owner !== terminal)
-const STATUS_OPTIONS = ['En uso', 'En Almacén', 'Inhabilitado', 'Decomisado', 'En reparación', 'Por reparar', 'En proceso de decomiso'];
+const STATUS_OPTIONS = ['En uso', 'En Almacén', 'Inhabilitado', 'Decomisado', 'En reparación', 'En proceso de decomiso'];
 const TERMINAL_OPTIONS = ['Terminal A', 'Terminal B', 'Terminal B2'];
 const AREAS_A = ['Check-in Terminal A', 'Check Point TA', 'Migración Salidas TA', 'Sala de embarque A1', 'Sala de embarque A2', 'Food Court TA', 'Pasillo Llegadas', 'Sala Migración Llegadas', 'Migración Llegadas TA', 'Reclamo de equipajes TA', 'Aduanas TA', 'Área comercial (tienda) TA', 'Oficina TA', 'Pasillo TA', 'Gate 1', 'Gate 2', 'Gate 3', 'Gate 4', 'Gate 5', 'Gate 6', 'Gate 7', 'Gate 8', 'Gate 9', 'Gate 10', 'Gate 11', 'Gate 12', 'Gate 13', 'Gate 14', 'Gate 15', 'Gate 16', 'Paxer TA'];
 const AREAS_B = ['Correas de check in 1 y 2', 'Correas de check in 3 y 4', 'Check Point TB', 'Migración Salidas TB', 'Sala de embarque B1', 'Food Court TB', 'Pasillo Llegadas', 'Sala Migración Llegadas', 'Migración Llegadas TB', 'Reclamo de equipajes 11-13', 'Reclamo de equipajes 14-18', 'Aduanas TB', 'Área comercial (tienda) TB', 'Oficina TB', 'Pasillo TB', 'Gate 20', 'Gate 21', 'Gate 22', 'Gate 23', 'Gate 24', 'Gate 25', 'Gate 26', 'Gate 26F', 'Security Gate TB'];
@@ -27,7 +27,7 @@ const getAreasForTerminal = (term) => {
 };
 
 // Colores Semánticos GPC Material
-const STATUS_COLORS = { 'En uso': '#21BA45', 'En Almacén': '#3498db', 'Inhabilitado': '#e74c3c', 'Decomisado': '#7f8c8d', 'Por reparar': '#e67e22', 'Por decomisar': '#f1c40f', 'En reparación': '#9b59b6', 'Terminal A': '#1abc9c', 'Terminal B': '#e67e22', 'Terminal B2': '#9b59b6' };
+const STATUS_COLORS = { 'En uso': '#21BA45', 'En Almacén': '#3498db', 'Inhabilitado': '#e74c3c', 'Decomisado': '#7f8c8d', 'Por decomisar': '#f1c40f', 'En reparación': '#9b59b6', 'Terminal A': '#1abc9c', 'Terminal B': '#e67e22', 'Terminal B2': '#9b59b6' };
 
 const Dashboard = ({ onLogout }) => {
   const { inventory, saveInventory: setInventory, isLoading, globalLogs, addGlobalLog } = useInventory();
