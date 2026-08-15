@@ -586,7 +586,7 @@ const Dashboard = ({ onLogout }) => {
     if (deletePassword.trim() === 'CONFIRMO') {
       const updatedInventory = inventory.filter(i => i.id !== itemToDelete.id);
       setInventory(updatedInventory);
-    addGlobalLog(currentUser, `Eliminada fotografía del equipo: ${selectedImage.name}`);
+      addGlobalLog(currentUser, `Eliminado permanentemente el equipo: ${itemToDelete.name} de la terminal ${itemToDelete.terminal}.`);
       setItemToDelete(null);
       setDeletePassword('');
       setEditingId(null);
