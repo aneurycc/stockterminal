@@ -579,7 +579,7 @@ const Dashboard = ({ onLogout }) => {
     const matchTextActivo = (item.assetNumber || '').toLowerCase().includes(textFilterActivo.toLowerCase());
 
     let matchOwner = filterOwner === 'Todos' ? true : item.ownerTerminal === filterOwner;
-    return matchTerminal && matchStatus && matchType && matchTextEquipo && matchTextArea && matchTextEstado && matchOwner;
+    return matchTerminal && matchStatus && matchType && matchTextEquipo && matchTextArea && matchTextEstado && matchOwner && matchTextActivo;
   });
 
   const sortedInventory = React.useMemo(() => {
