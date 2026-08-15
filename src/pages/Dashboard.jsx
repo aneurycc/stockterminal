@@ -1,6 +1,7 @@
+import html2canvas from 'html2canvas';
 import React, { useState, useEffect, useMemo } from 'react';
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { Trash2, Clock, Upload, Copy, Plus, Moon, Sun, Package, Camera, RefreshCw, Activity, ChevronDown } from 'lucide-react';
+import { Trash2, Clock, Upload, Copy, Plus, Moon, Sun, Package, Camera, RefreshCw, Activity, ChevronDown , Share2 } from 'lucide-react';
 import { useInventory } from '../hooks/useInventory';
 import * as XLSX from 'xlsx';
 import KPICards from '../components/KPICards';
@@ -95,6 +96,55 @@ const Dashboard = ({ onLogout }) => {
   const [newItemAssetNumber, setNewItemAssetNumber] = useState('');
   const [filterOwner, setFilterOwner] = useState('Todos');
   const [shareItemView, setShareItemView] = useState(null);
+  const [isGeneratingCard, setIsGeneratingCard] = useState(false);
+  const [shareCardItem, setShareCardItem] = useState(null);
+  const shareCardRef = useRef(null);
+
+  const handleShareAsCard = async (item) => {
+    setShareCardItem(item);
+    setIsGeneratingCard(true);
+    
+    // Give react time to render the hidden card
+    setTimeout(async () => {
+      if (shareCardRef.current) {
+        try {
+          const canvas = await html2canvas(shareCardRef.current, { 
+            scale: 2, 
+            useCORS: true, 
+            backgroundColor: isDarkMode ? '#1e1e1e' : '#ffffff' 
+          });
+          const dataUrl = canvas.toDataURL('image/png');
+          
+          // Convert dataURL to Blob
+          const res = await fetch(dataUrl);
+          const blob = await res.blob();
+          const file = new File([blob], `Equipo_${item.name.replace(/\s+/g, '_')}.png`, { type: 'image/png' });
+
+          if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+             await navigator.share({
+               title: `Buscar Equipo: ${item.name}`,
+               text: `Por favor ubicar este equipo en ${item.terminal} - ${item.area}`,
+               files: [file]
+             });
+          } else {
+             // Fallback: download the image
+             const link = document.createElement('a');
+             link.download = file.name;
+             link.href = dataUrl;
+             link.click();
+             alert('Imagen descargada. Puedes enviarla por WhatsApp Web.');
+          }
+        } catch (error) {
+          console.error('Error generating card', error);
+          alert('Hubo un error al generar la tarjeta visual.');
+        } finally {
+          setIsGeneratingCard(false);
+          setShareCardItem(null);
+        }
+      }
+    }, 100);
+  };
+
 
   const handleOpenGallery = (item) => {
     setSelectedImage(item);
