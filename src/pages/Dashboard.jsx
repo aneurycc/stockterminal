@@ -914,6 +914,9 @@ const Dashboard = ({ onLogout }) => {
                           <button onClick={() => setHistoryModalItem(item)} title="Ver Historial" style={{ padding: '6px', background: '#fff3e0', color: '#ef6c00', border: 'none', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
                             <Clock size={16} />
                           </button>
+                          <button onClick={() => handleShareAsCard(item)} title="Compartir Ticket" style={{ padding: '6px', background: '#e8f5e9', color: '#2e7d32', border: 'none', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                            <Share2 size={16} />
+                          </button>
                         </td>
                       </>
                     )}
