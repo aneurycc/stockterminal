@@ -46,6 +46,7 @@ const Dashboard = ({ onLogout }) => {
   const [textFilterEquipo, setTextFilterEquipo] = useState('');
   const [textFilterArea, setTextFilterArea] = useState('');
   const [textFilterEstado, setTextFilterEstado] = useState('');
+  const [textFilterActivo, setTextFilterActivo] = useState('');
   
   // Estado Modo Oscuro
   const [isDarkMode, setIsDarkMode] = useState(() => {
@@ -575,6 +576,7 @@ const Dashboard = ({ onLogout }) => {
     const matchTextEquipo = item.name.toLowerCase().includes(textFilterEquipo.toLowerCase());
     const matchTextArea = (item.area || '').toLowerCase().includes(textFilterArea.toLowerCase());
     const matchTextEstado = (item.status || '').toLowerCase().includes(textFilterEstado.toLowerCase());
+    const matchTextActivo = (item.assetNumber || '').toLowerCase().includes(textFilterActivo.toLowerCase());
 
     let matchOwner = filterOwner === 'Todos' ? true : item.ownerTerminal === filterOwner;
     return matchTerminal && matchStatus && matchType && matchTextEquipo && matchTextArea && matchTextEstado && matchOwner;
@@ -767,6 +769,7 @@ const Dashboard = ({ onLogout }) => {
               <input type="text" placeholder="Buscar por Equipo..." value={textFilterEquipo} onChange={(e) => setTextFilterEquipo(e.target.value)} style={{ flex: 1, padding: '8px 12px', border: '1px solid #ddd', borderRadius: '4px', outline: 'none' }} />
               <input type="text" placeholder="Buscar por Área..." value={textFilterArea} onChange={(e) => setTextFilterArea(e.target.value)} style={{ flex: 1, padding: '8px 12px', border: '1px solid #ddd', borderRadius: '4px', outline: 'none' }} />
               <input type="text" placeholder="Buscar por Estado..." value={textFilterEstado} onChange={(e) => setTextFilterEstado(e.target.value)} style={{ flex: 1, padding: '8px 12px', border: '1px solid #ddd', borderRadius: '4px', outline: 'none' }} />
+              <input type="text" placeholder="Buscar por # Activo..." value={textFilterActivo} onChange={(e) => setTextFilterActivo(e.target.value)} style={{ flex: 1, padding: '8px 12px', border: '1px solid #ddd', borderRadius: '4px', outline: 'none' }} />
             </div>
           )}
           <div className="table-wrapper" style={{ overflowX: 'auto', maxHeight: '600px' }}>
