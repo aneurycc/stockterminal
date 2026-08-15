@@ -286,7 +286,7 @@ const Dashboard = ({ onLogout }) => {
         });
 
         if (newItems.length > 0) {
-           saveInventory([...inventory, ...newItems]);
+           setInventory([...inventory, ...newItems]);
            let successMsg = `Importación masiva: Se cargaron ${newItems.length} equipos desde Excel.`;
            if (skippedCount > 0) successMsg += ` (Se omitieron ${skippedCount} equipos por tener Activo Fijo duplicado).`;
            addGlobalLog(currentUser, successMsg);
@@ -331,7 +331,7 @@ const Dashboard = ({ onLogout }) => {
       updatedItem.history = [...(updatedItem.history || []), historyLog];
       
       const newInventory = inventory.map(i => i.id === updatedItem.id ? updatedItem : i);
-      saveInventory(newInventory);
+      setInventory(newInventory);
       setSelectedImage(updatedItem);
       addGlobalLog(currentUser, `Foto reemplazada para el equipo: ${updatedItem.name}.`);
     } catch (err) {
@@ -358,7 +358,7 @@ const Dashboard = ({ onLogout }) => {
     updatedItem.history = [...(updatedItem.history || []), historyLog];
     
     const newInventory = inventory.map(i => i.id === updatedItem.id ? updatedItem : i);
-    saveInventory(newInventory);
+    setInventory(newInventory);
     if (updatedItem.image || updatedItem.images) {
        setSelectedImage(updatedItem);
     }
