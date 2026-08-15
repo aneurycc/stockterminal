@@ -290,6 +290,14 @@ const Dashboard = ({ onLogout }) => {
       return;
     }
 
+    if (newItemIsFixedAsset && newItemAssetNumber?.trim()) {
+      const duplicate = inventory.find(i => i.isFixedAsset && i.assetNumber === newItemAssetNumber.trim());
+      if (duplicate) {
+        alert("Error: Ya existe otro equipo registrado con el mismo número de Activo Fijo (" + duplicate.name + ").");
+        return;
+      }
+    }
+
     const now = nowString();
     let remainingToDeduct = qty;
     let newInventory = [...inventory];
@@ -375,6 +383,14 @@ const Dashboard = ({ onLogout }) => {
     if (isNaN(parsedQty) || parsedQty < 1 || !editFormData.name?.trim()) {
       alert("Error: Nombre inválido o cantidad menor a 1.");
       return;
+    }
+
+    if (editFormData.isFixedAsset && editFormData.assetNumber?.trim()) {
+      const duplicate = inventory.find(i => i.id !== id && i.isFixedAsset && i.assetNumber === editFormData.assetNumber.trim());
+      if (duplicate) {
+        alert("Error: Ya existe otro equipo registrado con el mismo número de Activo Fijo (" + duplicate.name + ").");
+        return;
+      }
     }
 
     const finalArea = editFormData.area;
@@ -530,9 +546,13 @@ const Dashboard = ({ onLogout }) => {
     const cloned = {
       ...item,
       id: Date.now(),
-      isDraft: true, 
+      isDraft: true,
+      assetNumber: item.isFixedAsset ? '' : item.assetNumber,
       history: [...(item.history || []), `[${now}] Registro clonado a partir de otro lote de equipos.`]
     };
+    if (item.isFixedAsset) {
+      cloned.history.push(`[${now}] Número de Activo Fijo limpiado automáticamente para evitar duplicidad.`);
+    }
     setInventory([...inventory, cloned]);
     handleEditClick(cloned); 
   };
