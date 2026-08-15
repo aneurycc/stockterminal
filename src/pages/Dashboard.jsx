@@ -1,5 +1,5 @@
 import html2canvas from 'html2canvas';
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { Trash2, Clock, Upload, Copy, Plus, Moon, Sun, Package, Camera, RefreshCw, Activity, ChevronDown , Share2 } from 'lucide-react';
 import { useInventory } from '../hooks/useInventory';
