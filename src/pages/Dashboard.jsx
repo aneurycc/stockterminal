@@ -311,6 +311,60 @@ const Dashboard = ({ onLogout }) => {
   };
 
 
+  const handleReplacePhoto = async (e, oldPhotoData) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    try {
+      const compressedBase64 = await compressImage(file);
+      const now = nowString();
+      let updatedItem = { ...selectedImage };
+      let historyLog = `[${now}] Foto cambiada desde la galería.`;
+      
+      if (updatedItem.images) {
+        updatedItem.images = updatedItem.images.map(img => 
+          img.data === oldPhotoData ? { ...img, data: compressedBase64, date: now } : img
+        );
+      } else {
+        updatedItem.image = compressedBase64;
+      }
+      
+      updatedItem.history = [...(updatedItem.history || []), historyLog];
+      
+      const newInventory = inventory.map(i => i.id === updatedItem.id ? updatedItem : i);
+      saveInventory(newInventory);
+      setSelectedImage(updatedItem);
+      addGlobalLog(currentUser, `Foto reemplazada para el equipo: ${updatedItem.name}.`);
+    } catch (err) {
+      alert("Error al procesar la imagen");
+    }
+  };
+
+  const handleDeletePhoto = (photoData) => {
+    if (!window.confirm("¿Seguro que deseas eliminar esta foto?")) return;
+    
+    const now = nowString();
+    let updatedItem = { ...selectedImage };
+    let historyLog = `[${now}] Foto eliminada desde la galería.`;
+
+    if (updatedItem.images && updatedItem.images.length > 1) {
+      updatedItem.images = updatedItem.images.filter(img => img.data !== photoData);
+      setActivePhotoIdx(0);
+    } else {
+      updatedItem.image = null;
+      delete updatedItem.images;
+      setSelectedImage(null);
+    }
+    
+    updatedItem.history = [...(updatedItem.history || []), historyLog];
+    
+    const newInventory = inventory.map(i => i.id === updatedItem.id ? updatedItem : i);
+    saveInventory(newInventory);
+    if (updatedItem.image || updatedItem.images) {
+       setSelectedImage(updatedItem);
+    }
+    addGlobalLog(currentUser, `Foto eliminada para el equipo: ${updatedItem.name}.`);
+  };
+
   const handleAddItem = (e) => {
     e.preventDefault();
     const qty = parseInt(newItemQuantity, 10);
@@ -1375,15 +1429,13 @@ const Dashboard = ({ onLogout }) => {
                  </div>
                  
                  <div style={{ position: 'absolute', top: '10px', right: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                   {!(selectedImage.images ? selectedImage.images[activePhotoIdx].date === 'Registro Original' : true) && (
-                     <button 
-                       onClick={() => handleDeletePhoto(selectedImage.images ? selectedImage.images[activePhotoIdx].data : selectedImage.image)}
-                       style={{ background: 'var(--q-negative)', color: 'white', border: 'none', borderRadius: '4px', padding: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 5px rgba(0,0,0,0.2)' }}
-                       title="Eliminar Foto"
-                     >
-                       <Trash2 size={16} />
-                     </button>
-                   )}
+                   <button 
+                     onClick={() => handleDeletePhoto(selectedImage.images ? selectedImage.images[activePhotoIdx].data : selectedImage.image)}
+                     style={{ background: 'var(--q-negative)', color: 'white', border: 'none', borderRadius: '4px', padding: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 5px rgba(0,0,0,0.2)' }}
+                     title="Eliminar Foto"
+                   >
+                     <Trash2 size={16} />
+                   </button>
                    <label 
                      style={{ background: 'var(--q-info)', color: 'white', border: 'none', borderRadius: '4px', padding: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 5px rgba(0,0,0,0.2)' }}
                      title="Cambiar Foto"
