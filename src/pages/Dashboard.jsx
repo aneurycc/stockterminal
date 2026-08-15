@@ -259,7 +259,6 @@ const Dashboard = ({ onLogout }) => {
           const area = areaOptions.includes(rawArea) ? rawArea : areaOptions[0];
           const status = row['Estado'] || row['estado'] || 'En uso';
           const assetNum = (row['Activo Fijo'] || row['Activo'] || row['activo'] || row['activo fijo'] || '').toString().trim();
-          const type = row['Tipo'] || row['tipo'] || 'Sistemas';
 
           // Validación de duplicado de Activo Fijo
           if (assetNum.length > 0) {
@@ -274,7 +273,6 @@ const Dashboard = ({ onLogout }) => {
             id: Date.now().toString() + Math.random().toString() + index,
             name: row['Nombre'] || row['nombre'] || 'Equipo Genérico',
             quantity: parseInt(row['Cantidad'] || row['cantidad']) || 1,
-            type: type,
             isFixedAsset: assetNum.length > 0,
             assetNumber: assetNum,
             terminal: terminal,
