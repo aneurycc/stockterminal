@@ -234,6 +234,11 @@ const Dashboard = ({ onLogout }) => {
     const file = e.target.files[0];
     if (!file) return;
 
+    if (!window.confirm(`¿Estás seguro que deseas cargar el inventario desde el archivo "${file.name}"? Esto agregará los equipos al sistema.`)) {
+      e.target.value = null; // reset input
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = (evt) => {
       try {
@@ -244,6 +249,7 @@ const Dashboard = ({ onLogout }) => {
         const data = XLSX.utils.sheet_to_json(ws);
         
         let newItems = [];
+        let skippedCount = 0;
         let validAreas = getAvailableAreas('Terminal A'); // Default fallback
         
         data.forEach((row, index) => {
@@ -252,11 +258,25 @@ const Dashboard = ({ onLogout }) => {
           const rawArea = row['Area'] || row['area'] || row['Área'] || row['área'];
           const area = areaOptions.includes(rawArea) ? rawArea : areaOptions[0];
           const status = row['Estado'] || row['estado'] || 'En uso';
+          const assetNum = (row['Activo Fijo'] || row['Activo'] || row['activo'] || row['activo fijo'] || '').toString().trim();
+          const type = row['Tipo'] || row['tipo'] || 'Sistemas';
+
+          // Validación de duplicado de Activo Fijo
+          if (assetNum.length > 0) {
+            const isDuplicate = inventory.some(i => i.isFixedAsset && i.assetNumber.toLowerCase() === assetNum.toLowerCase());
+            if (isDuplicate) {
+              skippedCount++;
+              return; // Skip this row
+            }
+          }
           
           newItems.push({
-            id: Date.now() + Math.random() + index,
+            id: Date.now().toString() + Math.random().toString() + index,
             name: row['Nombre'] || row['nombre'] || 'Equipo Genérico',
             quantity: parseInt(row['Cantidad'] || row['cantidad']) || 1,
+            type: type,
+            isFixedAsset: assetNum.length > 0,
+            assetNumber: assetNum,
             terminal: terminal,
             ownerTerminal: row['Propietario'] || row['propietario'] || terminal,
             area: area,
@@ -267,10 +287,19 @@ const Dashboard = ({ onLogout }) => {
 
         if (newItems.length > 0) {
            saveInventory([...inventory, ...newItems]);
-           addGlobalLog(currentUser, `Importación masiva: Se cargaron ${newItems.length} equipos desde Excel.`);
-           alert(`Excel cargado exitosamente. Se agregaron ${newItems.length} equipos.`);
+           let successMsg = `Importación masiva: Se cargaron ${newItems.length} equipos desde Excel.`;
+           if (skippedCount > 0) successMsg += ` (Se omitieron ${skippedCount} equipos por tener Activo Fijo duplicado).`;
+           addGlobalLog(currentUser, successMsg);
+           
+           let alertMsg = `Excel cargado exitosamente.\n✅ Se agregaron ${newItems.length} equipos.`;
+           if (skippedCount > 0) alertMsg += `\n⚠️ Se omitieron ${skippedCount} equipos porque su número de Activo Fijo ya existe en el inventario.`;
+           alert(alertMsg);
         } else {
-           alert("El archivo no contenía datos válidos.");
+           if (skippedCount > 0) {
+             alert(`No se agregó ningún equipo. Se omitieron ${skippedCount} equipos porque sus números de Activo Fijo ya existen en el sistema.`);
+           } else {
+             alert("El archivo no contenía datos válidos.");
+           }
         }
       } catch (err) {
         console.error(err);
