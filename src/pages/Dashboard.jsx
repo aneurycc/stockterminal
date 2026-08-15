@@ -1205,6 +1205,63 @@ const Dashboard = ({ onLogout }) => {
       )}
 
       {/* Modal de Lectura (Compartido) */}
+      {shareCardItem && (
+        <div style={{ position: 'absolute', top: '-9999px', left: '-9999px' }}>
+          <div ref={shareCardRef} style={{
+            width: '400px',
+            background: isDarkMode ? '#1e1e1e' : '#ffffff',
+            padding: '20px',
+            borderRadius: '12px',
+            boxShadow: '0 4px 15px rgba(0,0,0,0.1)',
+            fontFamily: 'system-ui, -apple-system, sans-serif',
+            color: isDarkMode ? '#e0e0e0' : '#333333',
+            border: `2px solid ${isDarkMode ? '#333' : '#eee'}`
+          }}>
+            <div style={{ borderBottom: `1px solid ${isDarkMode ? '#444' : '#eee'}`, paddingBottom: '10px', marginBottom: '15px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h2 style={{ margin: 0, fontSize: '20px', color: '#2e7d32' }}>Ticket de Búsqueda</h2>
+              <span style={{ fontSize: '12px', background: '#e3f2fd', color: '#1565c0', padding: '4px 8px', borderRadius: '12px', fontWeight: 'bold' }}>Stock Terminal</span>
+            </div>
+            
+            <div style={{ display: 'flex', gap: '15px', marginBottom: '15px' }}>
+              {shareCardItem.image ? (
+                <img src={shareCardItem.image} alt="Equipo" style={{ width: '120px', height: '120px', objectFit: 'cover', borderRadius: '8px', border: '1px solid #ccc' }} />
+              ) : (
+                <div style={{ width: '120px', height: '120px', background: '#f5f5f5', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#aaa', border: '1px dashed #ccc' }}>
+                  Sin Foto
+                </div>
+              )}
+              
+              <div style={{ flex: 1 }}>
+                <h3 style={{ margin: '0 0 5px 0', fontSize: '18px' }}>{shareCardItem.name}</h3>
+                {shareCardItem.isFixedAsset && (
+                   <span style={{ background: '#e8f5e9', color: '#2e7d32', padding: '2px 6px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold', display: 'inline-block', marginBottom: '8px' }}>
+                     ACTIVO # {shareCardItem.assetNumber}
+                   </span>
+                )}
+                
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '10px' }}>
+                  <div style={{ background: isDarkMode ? '#333' : '#f9f9f9', padding: '8px', borderRadius: '6px' }}>
+                    <div style={{ fontSize: '11px', color: '#888', textTransform: 'uppercase' }}>Ubicación</div>
+                    <div style={{ fontSize: '14px', fontWeight: 'bold' }}>{shareCardItem.terminal} - {shareCardItem.area}</div>
+                  </div>
+                  
+                  <div style={{ display: 'flex', gap: '10px' }}>
+                    <div style={{ background: isDarkMode ? '#333' : '#f9f9f9', padding: '8px', borderRadius: '6px', flex: 1 }}>
+                      <div style={{ fontSize: '11px', color: '#888', textTransform: 'uppercase' }}>Cantidad</div>
+                      <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#2e7d32' }}>{shareCardItem.quantity} ud(s)</div>
+                    </div>
+                    <div style={{ background: isDarkMode ? '#333' : '#f9f9f9', padding: '8px', borderRadius: '6px', flex: 1 }}>
+                      <div style={{ fontSize: '11px', color: '#888', textTransform: 'uppercase' }}>Estado</div>
+                      <div style={{ fontSize: '14px', fontWeight: 'bold' }}>{shareCardItem.status}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      
       {shareItemView && (
         <div className="modal-overlay" style={{ background: 'rgba(255,255,255,0.95)' }}>
           <div className="material-card" style={{ padding: '30px', width: '100%', maxWidth: '600px', display: 'flex', flexDirection: 'column', gap: '20px', position: 'relative' }}>
