@@ -1134,7 +1134,7 @@ const Dashboard = ({ onLogout }) => {
                         if (file) {
                           try {
                             const compressedBase64 = await compressImage(file);
-                            setEditNewImage(compressedBase64);
+                            setNewItemImage(compressedBase64);
                           } catch (err) {
                             alert("Error al procesar la imagen");
                           }
