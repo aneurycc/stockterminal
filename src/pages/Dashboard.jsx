@@ -417,7 +417,7 @@ const Dashboard = ({ onLogout }) => {
       name: newItemName.trim(),
       status: newItemStatus,
       terminal: newItemTerminal,
-      ownerTerminal: newItemOwner,
+      ownerTerminal: newItemTerminal,
       owner: newItemTerminal,
       area: newItemArea,
       isFixedAsset: newItemIsFixedAsset,
