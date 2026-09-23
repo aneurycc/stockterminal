@@ -14,12 +14,56 @@ const initialInventory = [];
 // NOTA: Se ha eliminado "Prestado" porque ahora es una relación estructural (owner !== terminal)
 const STATUS_OPTIONS = ['En uso', 'En Almacén', 'Inhabilitado', 'Decomisado', 'En reparación', 'En proceso de decomiso'];
 const TERMINAL_OPTIONS = ['Terminal A', 'Terminal B', 'Terminal B2'];
+
+export const WAREHOUSES_DATA = {
+  'Terminal A': [
+    { name: 'Almacén Sótano', location: 'Sótano – Terminal A' },
+    { name: 'Almacén Aduanas TA', location: 'Aduanas – Terminal A' },
+    { name: 'Almacén Descanso Aerolíneas', location: 'Área de descanso de aerolíneas – Terminal A' },
+    { name: 'Almacén Expansión Llegadas TA', location: 'Expansión de Llegadas – Terminal A' },
+    { name: 'Almacén Airside', location: 'Airside – Terminal A' },
+    { name: 'Cuarto de Separadores Correa No. 1', location: 'Facturación, Correa 1 – Terminal A' },
+    { name: 'Cuarto de Separadores Correa No. 3', location: 'Facturación, Correa 3 – Terminal A' },
+    { name: 'Almacén A-2', location: 'Área A-2 – Terminal A' },
+    { name: 'Almacén Rent Car', location: 'Área Rent Car – Terminal A' },
+  ],
+  'Terminal B': [
+    { name: 'Almacén Aduanas TB', location: 'Aduanas, Correa 12 – Terminal B' },
+    { name: 'Almacén Vacation Club', location: 'Área Vacation Club – Terminal B' },
+    { name: 'Utility Room Correas 1 y 2', location: 'Facturación, Correas 1 y 2 – Terminal B' },
+    { name: 'Utility Room Correas 3 y 4', location: 'Facturación, Correas 3 y 4 – Terminal B' },
+  ],
+  'Terminal B2': [
+    { name: 'Almacén Comedor GOL', location: 'Comedor GOL – Terminal B2' },
+    { name: 'Utility Terminal B2', location: 'Área de escalera – Terminal B2' },
+    { name: 'Utility Gate 27', location: 'Gate 27 – Terminal B2' },
+    { name: 'Utility Gate 33', location: 'Gate 33 – Terminal B2' },
+    { name: 'Utility Food Court', location: 'Food Court – Terminal B2' },
+    { name: 'Utility Tránsito', location: 'Área de Tránsito – Terminal B2' },
+    { name: 'Cuarto de Separadores Gate 28', location: 'Gate 28 – Terminal B2' },
+    { name: 'Cuarto de Separadores Gate 29', location: 'Gate 29 – Terminal B2' },
+    { name: 'Almacén Airside B2', location: 'Airside – Terminal B2' },
+  ]
+};
+
+const ALL_WAREHOUSE_NAMES = [
+  ...WAREHOUSES_DATA['Terminal A'].map(w => w.name),
+  ...WAREHOUSES_DATA['Terminal B'].map(w => w.name),
+  ...WAREHOUSES_DATA['Terminal B2'].map(w => w.name),
+];
+
 const AREAS_A = ['Check-in Terminal A', 'Check Point TA', 'Migración Salidas TA', 'Sala de embarque A1', 'Sala de embarque A2', 'Food Court TA', 'Pasillo Llegadas', 'Sala Migración Llegadas', 'Migración Llegadas TA', 'Reclamo de equipajes TA', 'Aduanas TA', 'Área comercial (tienda) TA', 'Oficina TA', 'Pasillo TA', 'Gate 1', 'Gate 2', 'Gate 3', 'Gate 4', 'Gate 5', 'Gate 6', 'Gate 7', 'Gate 8', 'Gate 9', 'Gate 10', 'Gate 11', 'Gate 12', 'Gate 13', 'Gate 14', 'Gate 15', 'Gate 16', 'Paxer TA'];
 const AREAS_B = ['Correas de check in 1 y 2', 'Correas de check in 3 y 4', 'Check Point TB', 'Migración Salidas TB', 'Sala de embarque B1', 'Food Court TB', 'Pasillo Llegadas', 'Sala Migración Llegadas', 'Migración Llegadas TB', 'Reclamo de equipajes 11-13', 'Reclamo de equipajes 14-18', 'Aduanas TB', 'Área comercial (tienda) TB', 'Oficina TB', 'Pasillo TB', 'Gate 20', 'Gate 21', 'Gate 22', 'Gate 23', 'Gate 24', 'Gate 25', 'Gate 26', 'Gate 26F', 'Security Gate TB'];
 const AREAS_B2 = ['Food Court TB2', 'Migración Llegadas TB2', 'Oficina', 'Gate 27', 'Gate 28', 'Gate 29', 'Gate 30', 'Gate 31'];
 const AREAS_GENERAL = [...new Set([...AREAS_A, ...AREAS_B, ...AREAS_B2])];
 
-const getAreasForTerminal = (term) => {
+const getAreasForTerminal = (term, status) => {
+  if (status === 'En Almacén') {
+    if (term === 'Terminal A') return WAREHOUSES_DATA['Terminal A'].map(w => w.name);
+    if (term === 'Terminal B') return WAREHOUSES_DATA['Terminal B'].map(w => w.name);
+    if (term === 'Terminal B2') return WAREHOUSES_DATA['Terminal B2'].map(w => w.name);
+    return ALL_WAREHOUSE_NAMES;
+  }
   if (term === 'Terminal A') return AREAS_A;
   if (term === 'Terminal B') return AREAS_B;
   if (term === 'Terminal B2') return AREAS_B2;
@@ -31,8 +75,8 @@ const STATUS_COLORS = { 'En uso': '#21BA45', 'En Almacén': '#3498db', 'Inhabili
 
 const Dashboard = ({ onLogout }) => {
   const { inventory, saveInventory: setInventory, isLoading, globalLogs, addGlobalLog } = useInventory();
-  const currentUser = localStorage.getItem('gpc_user') || 'Sistema';
   const [isGlobalLogOpen, setIsGlobalLogOpen] = useState(false);
+  const [activeWarehouseTab, setActiveWarehouseTab] = useState('Terminal A');
 
   
   const [filterTerminal, setFilterTerminal] = useState('Todas');
@@ -206,7 +250,7 @@ const Dashboard = ({ onLogout }) => {
   const typeSuggestions = useMemo(() => Array.from(new Set(inventory.map(i => i.name))), [inventory]);
 
   useEffect(() => {
-    const allowedAreas = getAreasForTerminal(newItemTerminal);
+    const allowedAreas = getAreasForTerminal(newItemTerminal, newItemStatus);
     if (!allowedAreas.includes(newItemArea)) {
         setNewItemArea(allowedAreas[0]);
     }
@@ -215,9 +259,9 @@ const Dashboard = ({ onLogout }) => {
   useEffect(() => {
     // When editing, also validate area
     if (editFormData && editFormData.terminal) {
-       const allowedAreas = getAreasForTerminal(editFormData.terminal);
+       const allowedAreas = getAreasForTerminal(editFormData.terminal, editFormData.status);
        if (!allowedAreas.includes(editFormData.area)) {
-          setEditFormData({...editFormData, area: allowedAreas[0]});
+          setEditFormData(prev => ({...prev, area: allowedAreas[0]}));
        }
     }
   }, [editFormData?.terminal, editFormData?.status]);
@@ -699,11 +743,8 @@ const Dashboard = ({ onLogout }) => {
       return updated;
     });
   };
-  const getAvailableAreas = (terminal) => {
-    if (terminal === 'Terminal A') return AREAS_A;
-    if (terminal === 'Terminal B') return AREAS_B;
-    if (terminal === 'Terminal B2') return AREAS_B2;
-    return AREAS_GENERAL;
+  const getAvailableAreas = (terminal, status) => {
+    return getAreasForTerminal(terminal, status);
   };
 
   // Filtrado de inventario para la vista principal
@@ -876,14 +917,117 @@ const Dashboard = ({ onLogout }) => {
           )}
         </div>
 
-        {/* Google Maps Embed */}
-        <div className="material-card no-print" style={{ height: '420px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'var(--q-secondary)', border: '2px dashed var(--table-border)' }}>
-          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: '16px' }}>
-            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-          </svg>
-          <h2 style={{ color: 'var(--q-dark)', margin: '0 0 8px 0', fontSize: '24px' }}>Coming Soon</h2>
-          <p style={{ color: 'var(--text-muted)', margin: 0, fontSize: '16px' }}>Módulo de Almacenes en desarrollo</p>
+        {/* Módulo de Almacenes Oficiales */}
+        <div className="material-card no-print" style={{ height: '420px', padding: '20px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+            <h3 style={{ color: 'var(--q-dark)', margin: 0, display: 'flex', alignItems: 'center', gap: '8px', fontSize: '18px' }}>
+              <Package size={20} color="var(--q-accent)" />
+              Módulo de Almacenes
+            </h3>
+            <span style={{ fontSize: '11px', background: 'var(--q-accent)', color: 'white', padding: '3px 10px', borderRadius: '12px', fontWeight: 'bold' }}>
+              22 Almacenes Activos
+            </span>
+          </div>
+
+          {/* Pestañas de Terminales */}
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', borderBottom: '1px solid var(--q-secondary)', paddingBottom: '8px' }}>
+            {TERMINAL_OPTIONS.map(term => {
+              const isSelected = activeWarehouseTab === term;
+              const termWarehouses = WAREHOUSES_DATA[term] || [];
+              return (
+                <button
+                  key={term}
+                  type="button"
+                  onClick={() => setActiveWarehouseTab(term)}
+                  style={{
+                    padding: '5px 12px',
+                    borderRadius: '20px',
+                    border: isSelected ? 'none' : '1px solid var(--q-secondary)',
+                    backgroundColor: isSelected ? 'var(--q-accent)' : 'var(--card-bg)',
+                    color: isSelected ? 'white' : 'var(--text-main)',
+                    fontWeight: isSelected ? 'bold' : 'normal',
+                    cursor: 'pointer',
+                    fontSize: '12px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  {term}
+                  <span style={{
+                    fontSize: '10px',
+                    backgroundColor: isSelected ? 'rgba(255,255,255,0.25)' : 'var(--q-secondary)',
+                    color: isSelected ? 'white' : 'var(--text-muted)',
+                    padding: '1px 6px',
+                    borderRadius: '10px'
+                  }}>
+                    {termWarehouses.length}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Grid de Almacenes por Terminal */}
+          <div style={{ flex: 1, overflowY: 'auto', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(210px, 1fr))', gap: '10px', paddingRight: '4px' }}>
+            {(WAREHOUSES_DATA[activeWarehouseTab] || []).map((wh) => {
+              const itemsInWh = inventory.filter(item => item.terminal === activeWarehouseTab && item.status === 'En Almacén' && item.area === wh.name);
+              const totalUnits = itemsInWh.reduce((sum, item) => sum + (parseInt(item.quantity, 10) || 1), 0);
+              const isFiltered = textFilterArea === wh.name;
+
+              return (
+                <div
+                  key={wh.name}
+                  onClick={() => {
+                    if (isFiltered) {
+                      setTextFilterArea('');
+                      setShowTextFilters(false);
+                    } else {
+                      setTextFilterArea(wh.name);
+                      setFilterTerminal(activeWarehouseTab);
+                      setFilterStatus('En Almacén');
+                      setShowTextFilters(true);
+                    }
+                  }}
+                  style={{
+                    padding: '10px 12px',
+                    borderRadius: '8px',
+                    border: isFiltered ? '2px solid var(--q-accent)' : '1px solid var(--q-secondary)',
+                    backgroundColor: isFiltered ? 'rgba(0, 107, 63, 0.08)' : 'var(--q-primary)',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between'
+                  }}
+                  title={`Haz clic para filtrar equipos en ${wh.name}`}
+                >
+                  <div>
+                    <div style={{ fontWeight: '600', fontSize: '12px', color: 'var(--q-dark)', marginBottom: '3px', lineHeight: '1.2' }}>
+                      {wh.name}
+                    </div>
+                    <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                      📍 {wh.location}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px', paddingTop: '6px', borderTop: '1px dashed var(--table-border)' }}>
+                    <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Stock:</span>
+                    <span style={{ 
+                      fontSize: '11px', 
+                      fontWeight: 'bold', 
+                      color: totalUnits > 0 ? 'var(--q-positive)' : 'var(--text-muted)',
+                      backgroundColor: totalUnits > 0 ? 'rgba(16, 185, 129, 0.15)' : 'transparent',
+                      padding: '2px 6px',
+                      borderRadius: '10px'
+                    }}>
+                      {totalUnits} {totalUnits === 1 ? 'unidad' : 'unidades'}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
 
@@ -982,8 +1126,8 @@ const Dashboard = ({ onLogout }) => {
                           </select>
                         </td>
                         <td style={{ padding: '8px' }}>
-                          <select value={editFormData.area} onChange={(e) => handleEditFormChange(e, 'area')}  style={{ opacity: editFormData.status === 'En Almacén' ? 0.5 : 1 }}>
-                            {getAvailableAreas(editFormData.terminal).map(a => <option key={a} value={a}>{a}</option>)}
+                          <select value={editFormData.area} onChange={(e) => handleEditFormChange(e, 'area')}>
+                            {getAvailableAreas(editFormData.terminal, editFormData.status).map(a => <option key={a} value={a}>{a}</option>)}
                           </select>
                         </td>
                         <td style={{ padding: '8px' }}>
@@ -1107,9 +1251,9 @@ const Dashboard = ({ onLogout }) => {
                   </select>
                 </div>
                 <div style={{ flex: 1 }}>
-                  <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)' }}>Área</label>
-                  <select value={newItemArea} onChange={(e) => setNewItemArea(e.target.value)}  style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px', opacity: newItemStatus === 'En Almacén' ? 0.5 : 1 }}>
-                    {getAvailableAreas(newItemTerminal).map(area => <option key={area} value={area}>{area}</option>)}
+                  <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)' }}>{newItemStatus === 'En Almacén' ? 'Almacén Destino' : 'Área'}</label>
+                  <select value={newItemArea} onChange={(e) => setNewItemArea(e.target.value)}  style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}>
+                    {getAvailableAreas(newItemTerminal, newItemStatus).map(area => <option key={area} value={area}>{area}</option>)}
                   </select>
                 </div>
               </div>
