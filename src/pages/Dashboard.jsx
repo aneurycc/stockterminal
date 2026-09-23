@@ -951,7 +951,7 @@ const Dashboard = ({ onLogout }) => {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
             <h3 style={{ color: 'var(--q-dark)', margin: 0, display: 'flex', alignItems: 'center', gap: '8px', fontSize: '18px' }}>
               <Package size={20} color="var(--q-accent)" />
-              Módulo de Almacenes
+              Almacenes
             </h3>
             <span style={{ fontSize: '11px', background: 'var(--q-accent)', color: 'white', padding: '3px 10px', borderRadius: '12px', fontWeight: 'bold' }}>
               22 Almacenes Activos
