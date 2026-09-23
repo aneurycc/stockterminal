@@ -704,13 +704,24 @@ const Dashboard = ({ onLogout }) => {
   };
 
   const confirmDelete = () => {
+    if (!itemToDelete) return;
     if (deletePassword.trim() === 'CONFIRMO') {
-      const updatedInventory = inventory.filter(i => i.id !== itemToDelete.id);
-      setInventory(updatedInventory);
-      addGlobalLog(currentUser, `Eliminado permanentemente el equipo: ${itemToDelete.name} de la terminal ${itemToDelete.terminal}.`);
+      const deletedName = itemToDelete.name;
+      const targetId = itemToDelete.id;
+
+      // Cierre inmediato del modal
       setItemToDelete(null);
       setDeletePassword('');
       setEditingId(null);
+
+      // Eliminación robusta comparando IDs como String
+      const updatedInventory = inventory.filter(i => String(i.id) !== String(targetId));
+      setInventory(updatedInventory);
+      addGlobalLog(currentUser, `Eliminado permanentemente el equipo: ${deletedName}.`);
+      
+      setTimeout(() => {
+        alert(`🗑️ El equipo "${deletedName}" fue eliminado permanentemente del inventario.`);
+      }, 50);
     } else {
       alert('Debes escribir CONFIRMO (en mayúsculas) para eliminar.');
     }
