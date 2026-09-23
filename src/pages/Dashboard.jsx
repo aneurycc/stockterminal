@@ -535,7 +535,27 @@ const Dashboard = ({ onLogout }) => {
       history: [`[${now}] Equipo Registrado. Estado Inicial: ${newItemStatus}. Ubicación: ${newItemArea}. Almacén Base: ${assignedWarehouse}. Cantidad: ${qty}.`, ...autoDeductedLogs]
     };
 
-    setInventory([...newInventory, newItem]);
+    // Consolidation check for new item if not fixed asset
+    const existingIndex = !newItem.isFixedAsset ? newInventory.findIndex(i => 
+      !i.isFixedAsset &&
+      i.name.trim().toLowerCase() === newItem.name.trim().toLowerCase() &&
+      i.terminal === newItem.terminal &&
+      i.area === newItem.area &&
+      i.status === newItem.status
+    ) : -1;
+
+    if (existingIndex !== -1) {
+      const consolidatedInventory = [...newInventory];
+      const target = consolidatedInventory[existingIndex];
+      consolidatedInventory[existingIndex] = {
+        ...target,
+        quantity: target.quantity + qty,
+        history: [...(target.history || []), `[${now}] Consolidación automática: +${qty} unidad(es) agregadas a este registro. Total: ${target.quantity + qty}.`, ...autoDeductedLogs]
+      };
+      setInventory(consolidatedInventory);
+    } else {
+      setInventory([...newInventory, newItem]);
+    }
     addGlobalLog(currentUser, `Creado equipo nuevo: ${newItem.name} (Cant: ${newItem.quantity}, Terminal: ${newItem.terminal})`);
     
     // Reset search filters so the newly added item is not hidden by active table filters
@@ -669,8 +689,44 @@ const Dashboard = ({ onLogout }) => {
         history: [...(original.history || []), `[${now}] Creado por fraccionamiento de lote original (Cant: ${parsedQty}).`]
       };
       
-      delete childSpawn.isDraft; 
-      setInventory(inventory.map(i => String(i.id) === String(id) ? parentRemain : i).concat(childSpawn));
+      delete childSpawn.isDraft;
+
+      // Consolidation check for childSpawn
+      const existingMatch = !childSpawn.isFixedAsset ? inventory.find(i =>
+        String(i.id) !== String(id) &&
+        !i.isFixedAsset &&
+        i.name.trim().toLowerCase() === childSpawn.name.toLowerCase() &&
+        i.terminal === childSpawn.terminal &&
+        i.area === childSpawn.area &&
+        i.status === childSpawn.status
+      ) : null;
+
+      if (existingMatch) {
+        const consolidated = inventory.map(i => {
+          if (String(i.id) === String(id)) return parentRemain;
+          if (String(i.id) === String(existingMatch.id)) {
+            let mergedImages = i.images || [];
+            if (childSpawn.images) {
+              childSpawn.images.forEach(img => {
+                if (!mergedImages.find(m => m.data === img.data && m.status === img.status)) {
+                  mergedImages = [...mergedImages, img];
+                }
+              });
+            }
+            return {
+              ...i,
+              quantity: i.quantity + parsedQty,
+              images: mergedImages.length > 0 ? mergedImages : undefined,
+              history: [...(i.history || []), `[${now}] Consolidación: +${parsedQty} unidad(es) recibidas por fraccionamiento de "${original.name}". Total: ${i.quantity + parsedQty}.`]
+            };
+          }
+          return i;
+        });
+        setInventory(consolidated);
+      } else {
+        setInventory(inventory.map(i => String(i.id) === String(id) ? parentRemain : i).concat(childSpawn));
+      }
+
       addGlobalLog(currentUser, `Fraccionamiento de equipo: ${original.name}. Se extrajeron ${parsedQty} unidades hacia ${editFormData.status}.`);
 
       // Reset filters so both remaining and extracted stock are visible
@@ -707,8 +763,46 @@ const Dashboard = ({ onLogout }) => {
         history: [...(original.history || []), historyLog]
       };
       
-      delete updated.isDraft; 
-      setInventory(inventory.map(i => String(i.id) === String(id) ? updated : i));
+      delete updated.isDraft;
+
+      // Consolidation check for updated item
+      const existingMatch = !updated.isFixedAsset ? inventory.find(i =>
+        String(i.id) !== String(id) &&
+        !i.isFixedAsset &&
+        i.name.trim().toLowerCase() === updated.name.toLowerCase() &&
+        i.terminal === updated.terminal &&
+        i.area === updated.area &&
+        i.status === updated.status
+      ) : null;
+
+      if (existingMatch) {
+        // Merge updated into existingMatch and remove row id
+        const consolidated = inventory
+          .filter(i => String(i.id) !== String(id))
+          .map(i => {
+            if (String(i.id) === String(existingMatch.id)) {
+              let mergedImages = i.images || [];
+              if (updated.images) {
+                updated.images.forEach(img => {
+                  if (!mergedImages.find(m => m.data === img.data && m.status === img.status)) {
+                    mergedImages = [...mergedImages, img];
+                  }
+                });
+              }
+              return {
+                ...i,
+                quantity: i.quantity + parsedQty,
+                images: mergedImages.length > 0 ? mergedImages : undefined,
+                history: [...(i.history || []), `[${now}] Consolidación por edición: +${parsedQty} unidad(es) unificadas desde "${original.name}" en ${original.area}. Total: ${i.quantity + parsedQty}.`]
+              };
+            }
+            return i;
+          });
+        setInventory(consolidated);
+      } else {
+        setInventory(inventory.map(i => String(i.id) === String(id) ? updated : i));
+      }
+
       addGlobalLog(currentUser, `Editado equipo: ${updated.name}. ${historyLog}`);
 
       // Reset filters so updated item is visible
