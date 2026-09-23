@@ -668,11 +668,20 @@ const Dashboard = ({ onLogout }) => {
       };
       
       delete childSpawn.isDraft; 
-      setInventory(inventory.map(i => i.id === id ? parentRemain : i).concat(childSpawn));
+      setInventory(inventory.map(i => String(i.id) === String(id) ? parentRemain : i).concat(childSpawn));
       addGlobalLog(currentUser, `Fraccionamiento de equipo: ${original.name}. Se extrajeron ${parsedQty} unidades hacia ${editFormData.status}.`);
+
+      // Reset filters so both remaining and extracted stock are visible
+      setTextFilterEquipo('');
+      setTextFilterArea('');
+      setTextFilterEstado('');
+      setFilterStatus('Todos');
+
+      setTimeout(() => {
+        alert(`✅ Fraccionamiento exitoso: Se extrajeron ${parsedQty} unidades a "${editFormData.status}". En "${original.area}" permanecen ${qtyDelta} unidades.`);
+      }, 50);
     } else {
       if (qtyDelta < 0 && !original.isDraft) historyLog += `Cantidad incrementada de ${original.quantity} a ${parsedQty}.`;
-      
       
       let imagesArray = original.images || [];
       if (original.image && !imagesArray.find(img => img.data === original.image)) {
@@ -697,8 +706,18 @@ const Dashboard = ({ onLogout }) => {
       };
       
       delete updated.isDraft; 
-      setInventory(inventory.map(i => i.id === id ? updated : i));
+      setInventory(inventory.map(i => String(i.id) === String(id) ? updated : i));
       addGlobalLog(currentUser, `Editado equipo: ${updated.name}. ${historyLog}`);
+
+      // Reset filters so updated item is visible
+      setTextFilterEquipo('');
+      setTextFilterArea('');
+      setTextFilterEstado('');
+      setFilterStatus('Todos');
+
+      setTimeout(() => {
+        alert(`✅ Equipo "${updated.name}" actualizado exitosamente.`);
+      }, 50);
     }
     setEditingId(null);
   };
