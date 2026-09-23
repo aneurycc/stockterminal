@@ -557,7 +557,9 @@ const Dashboard = ({ onLogout }) => {
     setNewItemAssetNumber('');
     setIsAddModalOpen(false); 
 
-    alert(`✅ Equipo "${newItem.name}" (${newItem.quantity} unidades) registrado exitosamente.`);
+    setTimeout(() => {
+      alert(`✅ Equipo "${newItem.name}" (${newItem.quantity} unidades) registrado exitosamente.`);
+    }, 50);
   };
 
   const handleEditClick = (item) => {
