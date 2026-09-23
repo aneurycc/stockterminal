@@ -21,13 +21,25 @@ export function useInventory() {
         if (storedLogs) setGlobalLogs(storedLogs);
         
         if (storedInventory) {
-          // Migration: 'Dañado' -> 'Inhabilitado' and add ownerTerminal
+          // Migration: 'Dañado' -> 'Inhabilitado' and fix ownerTerminal logic
           let migrated = false;
           const newInv = storedInventory.map(item => {
             let changed = false;
             let newItem = { ...item };
             if (newItem.status === 'Dañado') { newItem.status = 'Inhabilitado'; changed = true; }
-            if (!newItem.ownerTerminal) { newItem.ownerTerminal = newItem.terminal; changed = true; }
+            
+            // Check if item was ever transferred or lent
+            const isTransferred = (newItem.history || []).some(h => 
+              /prestado|transferido|trasladado|fraccionado/i.test(h)
+            );
+
+            // Fix invalid or default ownerTerminal on non-transferred items
+            if (!newItem.ownerTerminal || (!isTransferred && newItem.ownerTerminal !== newItem.terminal)) {
+              newItem.ownerTerminal = newItem.terminal;
+              newItem.owner = newItem.terminal;
+              changed = true;
+            }
+
             if (newItem.area === 'N/A') {
               // Migration to remove N/A
               newItem.area = newItem.terminal === 'Terminal B2' ? 'Gate 27' : 'Gate 1';

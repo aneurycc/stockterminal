@@ -242,69 +242,119 @@ const Dashboard = ({ onLogout }) => {
     const reader = new FileReader();
     reader.onload = (evt) => {
       try {
-        const bstr = evt.target.result;
-        const wb = XLSX.read(bstr, { type: 'binary' });
+        const dataBuffer = evt.target.result;
+        const wb = XLSX.read(dataBuffer, { type: 'array' });
         const wsname = wb.SheetNames[0];
         const ws = wb.Sheets[wsname];
-        const data = XLSX.utils.sheet_to_json(ws);
-        
+        const rawJson = XLSX.utils.sheet_to_json(ws, { defval: '' });
+
+        if (!rawJson || rawJson.length === 0) {
+          alert("El archivo no contiene datos válidos.");
+          return;
+        }
+
         let newItems = [];
         let skippedCount = 0;
-        let validAreas = getAvailableAreas('Terminal A'); // Default fallback
-        
-        data.forEach((row, index) => {
-          const terminal = row['Terminal'] || row['terminal'] || 'Terminal A';
-          const areaOptions = getAvailableAreas(terminal);
-          const rawArea = row['Area'] || row['area'] || row['Área'] || row['área'];
-          const area = areaOptions.includes(rawArea) ? rawArea : areaOptions[0];
-          const status = row['Estado'] || row['estado'] || 'En uso';
-          const assetNum = (row['Activo Fijo'] || row['Activo'] || row['activo'] || row['activo fijo'] || '').toString().trim();
 
-          // Validación de duplicado de Activo Fijo
+        // Helper to extract field value by searching keys flexibly
+        const getVal = (rowObj, candidates) => {
+          const keys = Object.keys(rowObj);
+          for (const cand of candidates) {
+            const match = keys.find(k => k.trim().toLowerCase().replace(/[^\w\sáéíóúñ]/gi, '') === cand.toLowerCase().replace(/[^\w\sáéíóúñ]/gi, ''));
+            if (match && rowObj[match] !== undefined && rowObj[match] !== null && rowObj[match].toString().trim() !== '') {
+              return rowObj[match].toString().trim();
+            }
+          }
+          for (const cand of candidates) {
+            const match = keys.find(k => k.trim().toLowerCase().includes(cand.toLowerCase()));
+            if (match && rowObj[match] !== undefined && rowObj[match] !== null && rowObj[match].toString().trim() !== '') {
+              return rowObj[match].toString().trim();
+            }
+          }
+          return '';
+        };
+
+        rawJson.forEach((row, index) => {
+          // If CSV single-column key detected (e.g., "Nombre;Terminal;Area...")
+          let parsedRow = { ...row };
+          const rowKeys = Object.keys(row);
+          if (rowKeys.length === 1 && rowKeys[0].includes(';')) {
+            const headers = rowKeys[0].split(';');
+            const vals = (row[rowKeys[0]] || '').toString().split(';');
+            parsedRow = {};
+            headers.forEach((h, idx) => {
+              parsedRow[h.trim()] = vals[idx] ? vals[idx].trim() : '';
+            });
+          }
+
+          const rawName = getVal(parsedRow, ['Nombre', 'Equipo', 'Articulo', 'Artículo', 'Item', 'Name', 'Descripción', 'Producto']);
+          const name = rawName || `Equipo Genérico ${index + 1}`;
+
+          const rawTerminal = getVal(parsedRow, ['Terminal', 'Ubicacion', 'Ubicación', 'Posicion', 'Posición', 'Location']);
+          const terminal = TERMINAL_OPTIONS.includes(rawTerminal) ? rawTerminal : 'Terminal A';
+
+          const areaOptions = getAvailableAreas(terminal);
+          const rawArea = getVal(parsedRow, ['Area', 'Área', 'Zona', 'Lugar']);
+          const area = areaOptions.includes(rawArea) ? rawArea : areaOptions[0];
+
+          const rawStatus = getVal(parsedRow, ['Estado', 'Status', 'Condicion', 'Condición']);
+          const status = STATUS_OPTIONS.includes(rawStatus) ? rawStatus : 'En uso';
+
+          const rawQty = getVal(parsedRow, ['Cantidad', 'Cant', 'Qty', 'Quantity', 'Unidades', 'Stock']);
+          const qtyParsed = parseInt(rawQty, 10);
+          const quantity = (!isNaN(qtyParsed) && qtyParsed > 0) ? qtyParsed : 1;
+
+          const assetNum = getVal(parsedRow, ['Activo Fijo', 'Activo', 'Asset', 'Num Activo', '# Activo', 'Nro Activo', 'Codigo Activo']);
+          
+          const rawOwner = getVal(parsedRow, ['Propietario', 'Owner', 'Dueño', 'Dueno']);
+          const ownerTerminal = (TERMINAL_OPTIONS.includes(rawOwner)) ? rawOwner : terminal;
+
+          // Duplicate Asset Number validation
           if (assetNum.length > 0) {
             const isDuplicate = inventory.some(i => i.isFixedAsset && i.assetNumber.toLowerCase() === assetNum.toLowerCase());
             if (isDuplicate) {
               skippedCount++;
-              return; // Skip this row
+              return;
             }
           }
-          
+
           newItems.push({
             id: Date.now().toString() + Math.random().toString() + index,
-            name: row['Nombre'] || row['nombre'] || 'Equipo Genérico',
-            quantity: parseInt(row['Cantidad'] || row['cantidad']) || 1,
+            name: name,
+            quantity: quantity,
             isFixedAsset: assetNum.length > 0,
             assetNumber: assetNum,
             terminal: terminal,
-            ownerTerminal: row['Propietario'] || row['propietario'] || terminal,
+            ownerTerminal: ownerTerminal,
+            owner: ownerTerminal,
             area: area,
             status: status,
-            history: [`[${nowString()}] Importado desde Excel`]
+            history: [`[${nowString()}] Importado desde Excel/CSV`]
           });
         });
 
         if (newItems.length > 0) {
-           setInventory([...inventory, ...newItems]);
-           let successMsg = `Importación masiva: Se cargaron ${newItems.length} equipos desde Excel.`;
-           if (skippedCount > 0) successMsg += ` (Se omitieron ${skippedCount} equipos por tener Activo Fijo duplicado).`;
-           addGlobalLog(currentUser, successMsg);
-           
-           let alertMsg = `Excel cargado exitosamente.\n✅ Se agregaron ${newItems.length} equipos.`;
-           if (skippedCount > 0) alertMsg += `\n⚠️ Se omitieron ${skippedCount} equipos porque su número de Activo Fijo ya existe en el inventario.`;
-           alert(alertMsg);
+          setInventory([...inventory, ...newItems]);
+          let successMsg = `Importación masiva: Se cargaron ${newItems.length} equipos desde Excel/CSV.`;
+          if (skippedCount > 0) successMsg += ` (Se omitieron ${skippedCount} equipos por tener Activo Fijo duplicado).`;
+          addGlobalLog(currentUser, successMsg);
+
+          let alertMsg = `Archivo cargado exitosamente.\n✅ Se agregaron ${newItems.length} equipos.`;
+          if (skippedCount > 0) alertMsg += `\n⚠️ Se omitieron ${skippedCount} equipos porque su número de Activo Fijo ya existe en el inventario.`;
+          alert(alertMsg);
         } else {
-           if (skippedCount > 0) {
-             alert(`No se agregó ningún equipo. Se omitieron ${skippedCount} equipos porque sus números de Activo Fijo ya existen en el sistema.`);
-           } else {
-             alert("El archivo no contenía datos válidos.");
-           }
+          if (skippedCount > 0) {
+            alert(`No se agregó ningún equipo. Se omitieron ${skippedCount} equipos porque sus números de Activo Fijo ya existen en el sistema.`);
+          } else {
+            alert("El archivo no contenía datos válidos.");
+          }
         }
       } catch (err) {
         console.error(err);
-        alert("Error al procesar el archivo Excel. Revisa el formato.");
+        alert("Error al procesar el archivo Excel/CSV. Revisa que el formato sea correcto.");
       }
     };
-    reader.readAsBinaryString(file);
+    reader.readAsArrayBuffer(file);
     e.target.value = null; // reset input
   };
 
@@ -598,14 +648,15 @@ const Dashboard = ({ onLogout }) => {
       alert("No hay datos para exportar.");
       return;
     }
-    const headers = ["Equipo", "Cantidad", "Ubicación", "Área", "Estado", "Propietario"];
+    const headers = ["Nombre", "Terminal", "Area", "Estado", "Cantidad", "Activo Fijo", "Propietario"];
     const rows = filteredInventory.map(item => [
-      `"${item.name.replace(/"/g, '""')}"`,
-      item.quantity,
-      `"${item.terminal}"`,
-      `"${item.area}"`,
-      `"${item.status}"`,
-      `"${(item.ownerTerminal || item.terminal).replace(/"/g, '""')}"`
+      `"${(item.name || '').replace(/"/g, '""')}"`,
+      `"${(item.terminal || '').replace(/"/g, '""')}"`,
+      `"${(item.area || '').replace(/"/g, '""')}"`,
+      `"${(item.status || '').replace(/"/g, '""')}"`,
+      item.quantity || 1,
+      `"${item.isFixedAsset && item.assetNumber ? item.assetNumber.replace(/"/g, '""') : ''}"`,
+      `"${(item.ownerTerminal || item.terminal || '').replace(/"/g, '""')}"`
     ]);
     
     // Usamos punto y coma (;) porque Excel en español no reconoce la coma por defecto
@@ -923,7 +974,7 @@ const Dashboard = ({ onLogout }) => {
                           </div>
                           <datalist id="equipment-names-edit">{typeSuggestions.map(t => <option key={t} value={t} />)}</datalist>
                         </td>
-                        <td style={{ padding: '8px' }}><input type="number" min="1" max={item.quantity} value={editFormData.quantity} onChange={(e) => handleEditFormChange(e, 'quantity')} style={{ width: '50px', padding: '4px' }} title={`Fraccionar lote. Original: ${item.quantity}`} /></td>
+                        <td style={{ padding: '8px' }}><input type="number" min="1" max={item.quantity} value={editFormData.quantity} onKeyDown={(e) => { if (['e', 'E', '+', '-', '.', ','].includes(e.key)) e.preventDefault(); }} onChange={(e) => { const cleanVal = e.target.value.replace(/[^0-9]/g, ''); setEditFormData(prev => ({ ...prev, quantity: cleanVal })); }} style={{ width: '50px', padding: '4px' }} title={`Fraccionar lote. Original: ${item.quantity}`} /></td>
                         <td style={{ padding: '8px' }}>
                           {/* Cambiar de terminal ahora significa trasladarlo/prestarlo */}
                           <select value={editFormData.terminal} onChange={(e) => { handleEditFormChange(e, 'terminal'); if (e.target.value === 'Terminal B2') setEditFormData(prev => ({ ...prev, terminal: e.target.value, area: 'ML' })); }}>
@@ -1082,7 +1133,7 @@ const Dashboard = ({ onLogout }) => {
               <div style={{ display: 'flex', gap: '10px' }}>
                 <div style={{ flex: 1 }}>
                   <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)' }}>Cant.</label>
-                  <div className="material-input-group"><input type="number" min="1" value={newItemQuantity} onChange={(e) => setNewItemQuantity(e.target.value)} /></div>
+                  <div className="material-input-group"><input type="number" min="1" value={newItemQuantity} onKeyDown={(e) => { if (['e', 'E', '+', '-', '.', ','].includes(e.key)) e.preventDefault(); }} onChange={(e) => setNewItemQuantity(e.target.value.replace(/[^0-9]/g, ''))} /></div>
                 </div>
                 <div style={{ flex: 2 }}>
                   <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)' }}>Estado Inicial</label>
