@@ -537,12 +537,27 @@ const Dashboard = ({ onLogout }) => {
 
     setInventory([...newInventory, newItem]);
     addGlobalLog(currentUser, `Creado equipo nuevo: ${newItem.name} (Cant: ${newItem.quantity}, Terminal: ${newItem.terminal})`);
+    
+    // Reset search filters so the newly added item is not hidden by active table filters
+    setTextFilterEquipo('');
+    setTextFilterArea('');
+    setTextFilterEstado('');
+    setTextFilterActivo('');
+    if (filterTerminal !== 'Todas' && filterTerminal !== newItemTerminal) {
+      setFilterTerminal('Todas');
+    }
+    if (filterStatus !== 'Todos' && filterStatus !== newItemStatus) {
+      setFilterStatus('Todos');
+    }
+
     setNewItemName(''); 
     setNewItemQuantity(1);
     setNewItemImage(null);
     setNewItemIsFixedAsset(false);
     setNewItemAssetNumber('');
     setIsAddModalOpen(false); 
+
+    alert(`✅ Equipo "${newItem.name}" (${newItem.quantity} unidades) registrado exitosamente.`);
   };
 
   const handleEditClick = (item) => {
