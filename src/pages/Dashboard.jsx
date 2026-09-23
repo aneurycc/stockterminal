@@ -57,6 +57,13 @@ const AREAS_B = ['Correas de check in 1 y 2', 'Correas de check in 3 y 4', 'Chec
 const AREAS_B2 = ['Food Court TB2', 'Migración Llegadas TB2', 'Oficina', 'Gate 27', 'Gate 28', 'Gate 29', 'Gate 30', 'Gate 31'];
 const AREAS_GENERAL = [...new Set([...AREAS_A, ...AREAS_B, ...AREAS_B2])];
 
+const getOperationalAreas = (term) => {
+  if (term === 'Terminal A') return AREAS_A;
+  if (term === 'Terminal B') return AREAS_B;
+  if (term === 'Terminal B2') return AREAS_B2;
+  return AREAS_GENERAL;
+};
+
 const getAreasForTerminal = (term, status) => {
   if (status === 'En Almacén') {
     if (term === 'Terminal A') return WAREHOUSES_DATA['Terminal A'].map(w => w.name);
@@ -64,10 +71,7 @@ const getAreasForTerminal = (term, status) => {
     if (term === 'Terminal B2') return WAREHOUSES_DATA['Terminal B2'].map(w => w.name);
     return ALL_WAREHOUSE_NAMES;
   }
-  if (term === 'Terminal A') return AREAS_A;
-  if (term === 'Terminal B') return AREAS_B;
-  if (term === 'Terminal B2') return AREAS_B2;
-  return AREAS_GENERAL;
+  return getOperationalAreas(term);
 };
 
 // Colores Semánticos GPC Material
@@ -75,6 +79,7 @@ const STATUS_COLORS = { 'En uso': '#21BA45', 'En Almacén': '#3498db', 'Inhabili
 
 const Dashboard = ({ onLogout }) => {
   const { inventory, saveInventory: setInventory, isLoading, globalLogs, addGlobalLog } = useInventory();
+  const currentUser = localStorage.getItem('gpc_user') || 'gerente';
   const [isGlobalLogOpen, setIsGlobalLogOpen] = useState(false);
   const [activeWarehouseTab, setActiveWarehouseTab] = useState('Terminal A');
 
@@ -254,34 +259,29 @@ const Dashboard = ({ onLogout }) => {
     const whs = WAREHOUSES_DATA[newItemTerminal] || [];
     if (whs.length > 0 && !whs.some(w => w.name === newItemWarehouse)) {
       setNewItemWarehouse(whs[0].name);
+      if (newItemStatus === 'En Almacén') {
+        setNewItemArea(whs[0].name);
+      }
     }
   }, [newItemTerminal]);
 
   useEffect(() => {
-    const allowedAreas = getAreasForTerminal(newItemTerminal, newItemStatus);
     if (newItemStatus === 'En Almacén') {
-      if (newItemWarehouse) setNewItemArea(newItemWarehouse);
-    } else if (!allowedAreas.includes(newItemArea)) {
-      setNewItemArea(allowedAreas[0]);
+      const whs = WAREHOUSES_DATA[newItemTerminal] || [];
+      const targetWh = (newItemWarehouse && whs.some(w => w.name === newItemWarehouse))
+        ? newItemWarehouse
+        : (whs.length > 0 ? whs[0].name : '');
+      if (targetWh) {
+        setNewItemWarehouse(targetWh);
+        setNewItemArea(targetWh);
+      }
+    } else {
+      const allowedAreas = getOperationalAreas(newItemTerminal);
+      if (!allowedAreas.includes(newItemArea)) {
+        setNewItemArea(allowedAreas[0]);
+      }
     }
-  }, [newItemTerminal, newItemStatus, newItemWarehouse]);
-  
-  useEffect(() => {
-    // When editing, also validate area
-    if (editFormData && editFormData.terminal) {
-       const allowedAreas = getAreasForTerminal(editFormData.terminal, editFormData.status);
-       if (!allowedAreas.includes(editFormData.area)) {
-          setEditFormData(prev => ({...prev, area: allowedAreas[0]}));
-       }
-    }
-  }, [editFormData?.terminal, editFormData?.status]);
-
-  
-  useEffect(() => {
-    const handleClickOutside = () => setActiveDropdown(null);
-    window.addEventListener('click', handleClickOutside);
-    return () => window.removeEventListener('click', handleClickOutside);
-  }, []);
+  }, [newItemTerminal, newItemStatus]);
 
   
   const handleExcelImport = (e) => {
@@ -484,40 +484,9 @@ const Dashboard = ({ onLogout }) => {
     }
 
     const now = nowString();
-    let remainingToDeduct = qty;
-    let newInventory = [...inventory];
-    let autoDeductedLogs = [];
-
-    // AUTO-DEDUCCIÓN DE ALMACÉN
-    if (newItemStatus !== 'En Almacén') {
-      newInventory = newInventory.map(item => {
-        if (remainingToDeduct > 0 && item.name === newItemName.trim() && item.terminal === newItemTerminal && item.status === 'En Almacén') {
-          if (item.quantity >= remainingToDeduct) {
-            item.quantity -= remainingToDeduct;
-            item.history = [...(item.history || []), `[${now}] Deducción automática: -${remainingToDeduct} unidades enviadas a "${newItemArea}" en estado "${newItemStatus}".`];
-            autoDeductedLogs.push(`[${now}] ${remainingToDeduct} unidades fueron deducidas automáticamente del stock en almacén.`);
-            remainingToDeduct = 0;
-            return item;
-          } else {
-            const deducted = item.quantity;
-            remainingToDeduct -= deducted;
-            item.quantity = 0;
-            item.history = [...(item.history || []), `[${now}] Deducción automática: -${deducted} unidades enviadas a "${newItemArea}". (Stock agotado)`];
-            autoDeductedLogs.push(`[${now}] ${deducted} unidades deducidas automáticamente del almacén (Stock agotado).`);
-            return item;
-          }
-        }
-        return item;
-      }).filter(item => item.quantity > 0);
-    }
-
-    const createdFromScratch = remainingToDeduct;
-    if (createdFromScratch > 0 && newItemStatus !== 'En Almacén') {
-       autoDeductedLogs.push(`[${now}] ${createdFromScratch} unidades registradas como stock nuevo (No provenientes de almacén).`);
-    }
-
     const termWarehouses = WAREHOUSES_DATA[newItemTerminal] || [];
     const assignedWarehouse = newItemWarehouse || (termWarehouses.length > 0 ? termWarehouses[0].name : '');
+    const finalNewArea = newItemStatus === 'En Almacén' ? assignedWarehouse : newItemArea;
 
     const newItem = {
       id: Date.now(),
@@ -526,17 +495,17 @@ const Dashboard = ({ onLogout }) => {
       terminal: newItemTerminal,
       ownerTerminal: newItemTerminal,
       owner: newItemTerminal,
-      area: newItemStatus === 'En Almacén' ? assignedWarehouse : newItemArea,
+      area: finalNewArea,
       baseWarehouse: assignedWarehouse,
       isFixedAsset: newItemIsFixedAsset,
       assetNumber: newItemIsFixedAsset ? newItemAssetNumber : '',
       quantity: qty,
       image: newItemImage,
-      history: [`[${now}] Equipo Registrado. Estado Inicial: ${newItemStatus}. Ubicación: ${newItemArea}. Almacén Base: ${assignedWarehouse}. Cantidad: ${qty}.`, ...autoDeductedLogs]
+      history: [`[${now}] Equipo Registrado. Estado Inicial: ${newItemStatus}. Ubicación: ${finalNewArea}. Almacén Base: ${assignedWarehouse}. Cantidad: ${qty}.`]
     };
 
     // Consolidation check for new item if not fixed asset
-    const existingIndex = !newItem.isFixedAsset ? newInventory.findIndex(i => 
+    const existingIndex = !newItem.isFixedAsset ? inventory.findIndex(i => 
       !i.isFixedAsset &&
       i.name.trim().toLowerCase() === newItem.name.trim().toLowerCase() &&
       i.terminal === newItem.terminal &&
@@ -545,16 +514,17 @@ const Dashboard = ({ onLogout }) => {
     ) : -1;
 
     if (existingIndex !== -1) {
-      const consolidatedInventory = [...newInventory];
+      const consolidatedInventory = [...inventory];
       const target = consolidatedInventory[existingIndex];
       consolidatedInventory[existingIndex] = {
         ...target,
+        baseWarehouse: target.baseWarehouse || assignedWarehouse,
         quantity: target.quantity + qty,
-        history: [...(target.history || []), `[${now}] Consolidación automática: +${qty} unidad(es) agregadas a este registro. Total: ${target.quantity + qty}.`, ...autoDeductedLogs]
+        history: [...(target.history || []), `[${now}] Consolidación automática: +${qty} unidad(es) agregadas a este registro. Total: ${target.quantity + qty}.`]
       };
       setInventory(consolidatedInventory);
     } else {
-      setInventory([...newInventory, newItem]);
+      setInventory([...inventory, newItem]);
     }
     addGlobalLog(currentUser, `Creado equipo nuevo: ${newItem.name} (Cant: ${newItem.quantity}, Terminal: ${newItem.terminal})`);
     
@@ -563,6 +533,7 @@ const Dashboard = ({ onLogout }) => {
     setTextFilterArea('');
     setTextFilterEstado('');
     setTextFilterActivo('');
+    setShowTextFilters(false);
     if (filterTerminal !== 'Todas' && filterTerminal !== newItemTerminal) {
       setFilterTerminal('Todas');
     }
@@ -590,8 +561,12 @@ const Dashboard = ({ onLogout }) => {
         setInventory(prev => prev.filter(i => i.id !== editingId));
       }
     }
+    const whs = WAREHOUSES_DATA[item.terminal] || [];
+    const defaultWh = whs.length > 0 ? whs[0].name : '';
+    const resolvedBaseWh = item.baseWarehouse || (ALL_WAREHOUSE_NAMES.includes(item.area) ? item.area : defaultWh);
+
     setEditingId(item.id);
-    setEditFormData({ ...item });
+    setEditFormData({ ...item, baseWarehouse: resolvedBaseWh });
     setEditNewImage(null);
   };
   
@@ -612,16 +587,25 @@ const Dashboard = ({ onLogout }) => {
     }
 
     if (editFormData.isFixedAsset && editFormData.assetNumber?.trim()) {
-      const duplicate = inventory.find(i => i.id !== id && i.isFixedAsset && i.assetNumber === editFormData.assetNumber.trim());
+      const duplicate = inventory.find(i => String(i.id) !== String(id) && i.isFixedAsset && i.assetNumber === editFormData.assetNumber.trim());
       if (duplicate) {
         alert("Error: Ya existe otro equipo registrado con el mismo número de Activo Fijo (" + duplicate.name + ").");
         return;
       }
     }
 
-    const finalArea = editFormData.area;
+    const original = inventory.find(i => String(i.id) === String(id));
+    if (!original) {
+      setEditingId(null);
+      return;
+    }
 
-    const original = inventory.find(i => i.id === id);
+    const whs = WAREHOUSES_DATA[editFormData.terminal] || [];
+    const defaultWh = whs.length > 0 ? whs[0].name : '';
+    const resolvedBaseWarehouse = editFormData.baseWarehouse || original.baseWarehouse || (ALL_WAREHOUSE_NAMES.includes(original.area) ? original.area : defaultWh);
+    const finalArea = editFormData.status === 'En Almacén'
+      ? (ALL_WAREHOUSE_NAMES.includes(editFormData.area) ? editFormData.area : resolvedBaseWarehouse)
+      : editFormData.area;
     
     // VALIDATION: Prevent uploading duplicate photo for the same status
     if (editNewImage) {
@@ -639,9 +623,11 @@ const Dashboard = ({ onLogout }) => {
 
     const qtyDelta = original.quantity - parsedQty;
     const now = nowString();
+    const hasDestinationChanged = original.status !== editFormData.status || original.area !== finalArea || original.terminal !== editFormData.terminal;
 
     let historyLog = `[${now}] Editado. `;
     if (original.status !== editFormData.status) historyLog += `Estado cambió de "${original.status}" a "${editFormData.status}". `;
+    if (original.area !== finalArea) historyLog += `Ubicación cambió de "${original.area}" a "${finalArea}". `;
     
     // CORRECCIÓN TYPO PROPIETARIO: Si cambia de terminal y solo tiene 1 registro histórico (el inicial), fue un error de registro.
     let newOwner = original.owner;
@@ -654,9 +640,17 @@ const Dashboard = ({ onLogout }) => {
        }
     }
 
-    if (qtyDelta > 0 && !original.isDraft) {
-      // ERP Splitting Logic
-      
+    // Cierre inmediato del modo edición y limpieza de filtros activos para que se vean ambas filas
+    setEditingId(null);
+    setEditNewImage(null);
+    setTextFilterEquipo('');
+    setTextFilterArea('');
+    setTextFilterEstado('');
+    setFilterStatus('Todos');
+    setShowTextFilters(false);
+
+    if (qtyDelta > 0 && !original.isDraft && hasDestinationChanged) {
+      // ERP Splitting Logic: El remanente (qtyDelta) se queda en el estado/ubicación original, y la nueva cantidad (parsedQty) pasa al nuevo estado/ubicación
       let parentImages = original.images || [];
       if (original.image && !parentImages.find(img => img.data === original.image)) {
         parentImages = [{ data: original.image, status: original.status, date: 'Registro Original' }];
@@ -664,12 +658,12 @@ const Dashboard = ({ onLogout }) => {
       
       const parentRemain = {
         ...original,
+        baseWarehouse: resolvedBaseWarehouse,
         quantity: qtyDelta,
         images: parentImages.length > 0 ? parentImages : undefined,
-        history: [...(original.history || []), `[${now}] Fraccionamiento: ${parsedQty} unidad(es) extraídas y asignadas como "${editFormData.status}". Restan ${qtyDelta}.`]
+        history: [...(original.history || []), `[${now}] Fraccionamiento: ${parsedQty} unidad(es) extraídas hacia "${finalArea}" (${editFormData.status}). Restan ${qtyDelta} en "${original.area}" (${original.status}).`]
       };
 
-      
       let childImages = parentImages.map(img => ({...img})); // clone
       if (editNewImage) {
         childImages.push({ data: editNewImage, status: editFormData.status, date: now });
@@ -679,6 +673,7 @@ const Dashboard = ({ onLogout }) => {
         ...editFormData,
         owner: newOwner,
         area: finalArea,
+        baseWarehouse: resolvedBaseWarehouse,
         id: Date.now(),
         name: editFormData.name.trim(),
         isFixedAsset: editFormData.isFixedAsset,
@@ -686,7 +681,7 @@ const Dashboard = ({ onLogout }) => {
         quantity: parsedQty,
         image: editNewImage || original.image,
         images: childImages.length > 0 ? childImages : undefined,
-        history: [...(original.history || []), `[${now}] Creado por fraccionamiento de lote original (Cant: ${parsedQty}).`]
+        history: [...(original.history || []), `[${now}] Extraído (${parsedQty} uds) desde "${original.area}" (${original.status}) hacia "${finalArea}" (${editFormData.status}).`]
       };
       
       delete childSpawn.isDraft;
@@ -715,9 +710,10 @@ const Dashboard = ({ onLogout }) => {
             }
             return {
               ...i,
+              baseWarehouse: i.baseWarehouse || resolvedBaseWarehouse,
               quantity: i.quantity + parsedQty,
               images: mergedImages.length > 0 ? mergedImages : undefined,
-              history: [...(i.history || []), `[${now}] Consolidación: +${parsedQty} unidad(es) recibidas por fraccionamiento de "${original.name}". Total: ${i.quantity + parsedQty}.`]
+              history: [...(i.history || []), `[${now}] Consolidación: +${parsedQty} unidad(es) recibidas desde "${original.area}". Total: ${i.quantity + parsedQty}.`]
             };
           }
           return i;
@@ -727,19 +723,15 @@ const Dashboard = ({ onLogout }) => {
         setInventory(inventory.map(i => String(i.id) === String(id) ? parentRemain : i).concat(childSpawn));
       }
 
-      addGlobalLog(currentUser, `Fraccionamiento de equipo: ${original.name}. Se extrajeron ${parsedQty} unidades hacia ${editFormData.status}.`);
-
-      // Reset filters so both remaining and extracted stock are visible
-      setTextFilterEquipo('');
-      setTextFilterArea('');
-      setTextFilterEstado('');
-      setFilterStatus('Todos');
+      addGlobalLog(currentUser, `Fraccionamiento de equipo: ${original.name}. ${parsedQty} uds a ${finalArea} (${editFormData.status}), restan ${qtyDelta} uds en ${original.area} (${original.status}).`);
 
       setTimeout(() => {
-        alert(`✅ Fraccionamiento exitoso: Se extrajeron ${parsedQty} unidades a "${editFormData.status}". En "${original.area}" permanecen ${qtyDelta} unidades.`);
+        alert(`✅ División de stock exitosa:\n• ${parsedQty} unidades pasaron a "${finalArea}" (${editFormData.status}).\n• ${qtyDelta} unidades permanecen en "${original.area}" (${original.status}).`);
       }, 50);
     } else {
-      if (qtyDelta < 0 && !original.isDraft) historyLog += `Cantidad incrementada de ${original.quantity} a ${parsedQty}.`;
+      if (qtyDelta !== 0 && !original.isDraft) {
+        historyLog += `Cantidad modificada de ${original.quantity} a ${parsedQty}. `;
+      }
       
       let imagesArray = original.images || [];
       if (original.image && !imagesArray.find(img => img.data === original.image)) {
@@ -754,6 +746,7 @@ const Dashboard = ({ onLogout }) => {
         ...editFormData,
         owner: newOwner,
         area: finalArea,
+        baseWarehouse: resolvedBaseWarehouse,
         name: editFormData.name.trim(),
         isFixedAsset: editFormData.isFixedAsset,
         assetNumber: editFormData.isFixedAsset ? editFormData.assetNumber : '',
@@ -791,6 +784,7 @@ const Dashboard = ({ onLogout }) => {
               }
               return {
                 ...i,
+                baseWarehouse: i.baseWarehouse || resolvedBaseWarehouse,
                 quantity: i.quantity + parsedQty,
                 images: mergedImages.length > 0 ? mergedImages : undefined,
                 history: [...(i.history || []), `[${now}] Consolidación por edición: +${parsedQty} unidad(es) unificadas desde "${original.name}" en ${original.area}. Total: ${i.quantity + parsedQty}.`]
@@ -805,17 +799,10 @@ const Dashboard = ({ onLogout }) => {
 
       addGlobalLog(currentUser, `Editado equipo: ${updated.name}. ${historyLog}`);
 
-      // Reset filters so updated item is visible
-      setTextFilterEquipo('');
-      setTextFilterArea('');
-      setTextFilterEstado('');
-      setFilterStatus('Todos');
-
       setTimeout(() => {
         alert(`✅ Equipo "${updated.name}" actualizado exitosamente.`);
       }, 50);
     }
-    setEditingId(null);
   };
 
   const confirmDelete = () => {
@@ -892,24 +879,49 @@ const Dashboard = ({ onLogout }) => {
     const val = e.target.value;
     setEditFormData(prev => {
       let updated = { ...prev, [field]: val };
+
       if (field === 'terminal') {
         const whs = WAREHOUSES_DATA[val] || [];
-        if (whs.length > 0 && (!updated.baseWarehouse || !whs.some(w => w.name === updated.baseWarehouse))) {
-          updated.baseWarehouse = whs[0].name;
+        const defaultWh = whs.length > 0 ? whs[0].name : '';
+        if (!updated.baseWarehouse || !whs.some(w => w.name === updated.baseWarehouse)) {
+          updated.baseWarehouse = defaultWh;
         }
-        if (val === 'Terminal B2' && updated.status !== 'En Almacén') updated.area = 'ML';
+        if (updated.status === 'En Almacén') {
+          updated.area = updated.baseWarehouse;
+        } else {
+          const opAreas = getOperationalAreas(val);
+          updated.area = opAreas[0];
+        }
       }
-      
+
+      if (field === 'area') {
+        // Si selecciona un Almacén en la columna Área/Ubicación, pasa automáticamente a estado 'En Almacén'
+        if (ALL_WAREHOUSE_NAMES.includes(val)) {
+          updated.status = 'En Almacén';
+          updated.baseWarehouse = val;
+        } else if (prev.status === 'En Almacén') {
+          // Si estaba en Almacén y selecciona un Área Operativa, pasa automáticamente a 'En uso'
+          updated.baseWarehouse = prev.baseWarehouse || (ALL_WAREHOUSE_NAMES.includes(prev.area) ? prev.area : '');
+          updated.status = 'En uso';
+        }
+      }
+
       if (field === 'status') {
         if (val === 'En Almacén') {
           const whs = WAREHOUSES_DATA[updated.terminal] || [];
           const defaultWh = whs.length > 0 ? whs[0].name : '';
-          updated.area = updated.baseWarehouse || defaultWh;
-        } else if (prev.status === 'En Almacén') {
-          const normalAreas = getAreasForTerminal(updated.terminal, val);
-          updated.area = normalAreas[0];
+          const targetWh = (updated.baseWarehouse && whs.some(w => w.name === updated.baseWarehouse))
+            ? updated.baseWarehouse
+            : defaultWh;
+          updated.area = targetWh;
+          updated.baseWarehouse = targetWh;
+        } else if (prev.status === 'En Almacén' || ALL_WAREHOUSE_NAMES.includes(updated.area)) {
+          updated.baseWarehouse = prev.baseWarehouse || (ALL_WAREHOUSE_NAMES.includes(prev.area) ? prev.area : '');
+          const opAreas = getOperationalAreas(updated.terminal);
+          updated.area = opAreas[0];
         }
       }
+
       return updated;
     });
   };
@@ -1291,14 +1303,37 @@ const Dashboard = ({ onLogout }) => {
                         <td style={{ padding: '8px' }}><input type="number" min="1" max={item.quantity} value={editFormData.quantity} onKeyDown={(e) => { if (['e', 'E', '+', '-', '.', ','].includes(e.key)) e.preventDefault(); }} onChange={(e) => { const cleanVal = e.target.value.replace(/[^0-9]/g, ''); setEditFormData(prev => ({ ...prev, quantity: cleanVal })); }} style={{ width: '50px', padding: '4px' }} title={`Fraccionar lote. Original: ${item.quantity}`} /></td>
                         <td style={{ padding: '8px' }}>
                           {/* Cambiar de terminal ahora significa trasladarlo/prestarlo */}
-                          <select value={editFormData.terminal} onChange={(e) => { handleEditFormChange(e, 'terminal'); if (e.target.value === 'Terminal B2') setEditFormData(prev => ({ ...prev, terminal: e.target.value, area: 'ML' })); }}>
+                          <select value={editFormData.terminal} onChange={(e) => handleEditFormChange(e, 'terminal')}>
                             {TERMINAL_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
                           </select>
                         </td>
                         <td style={{ padding: '8px' }}>
                           <select value={editFormData.area} onChange={(e) => handleEditFormChange(e, 'area')}>
-                            {getAvailableAreas(editFormData.terminal, editFormData.status).map(a => <option key={a} value={a}>{a}</option>)}
+                            <optgroup label={`📦 Almacenes (${editFormData.terminal})`}>
+                              {(WAREHOUSES_DATA[editFormData.terminal] || []).map(w => (
+                                <option key={w.name} value={w.name}>{w.name}</option>
+                              ))}
+                            </optgroup>
+                            <optgroup label={`🏢 Áreas Operativas (${editFormData.terminal})`}>
+                              {getOperationalAreas(editFormData.terminal).map(a => (
+                                <option key={a} value={a}>{a}</option>
+                              ))}
+                            </optgroup>
                           </select>
+                          {editFormData.status !== 'En Almacén' && (
+                            <div style={{ marginTop: '4px', fontSize: '10px', color: 'var(--text-muted)' }}>
+                              <span>Almacén Base: </span>
+                              <select
+                                value={editFormData.baseWarehouse || ''}
+                                onChange={(e) => setEditFormData(prev => ({ ...prev, baseWarehouse: e.target.value }))}
+                                style={{ fontSize: '10px', padding: '2px', borderRadius: '3px', border: '1px solid #ccc' }}
+                              >
+                                {(WAREHOUSES_DATA[editFormData.terminal] || []).map(w => (
+                                  <option key={w.name} value={w.name}>{w.name}</option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
                         </td>
                         <td style={{ padding: '8px' }}>
                           <select value={editFormData.status} onChange={(e) => handleEditFormChange(e, 'status')}>
@@ -1355,7 +1390,14 @@ const Dashboard = ({ onLogout }) => {
                           )}
                         </td>
 
-                        <td style={{ padding: '12px' }}>{item.area}</td>
+                        <td style={{ padding: '12px' }}>
+                          <div>{item.area}</div>
+                          {item.status !== 'En Almacén' && item.baseWarehouse && (
+                            <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '3px' }}>
+                              📦 Pertenece a: <b>{item.baseWarehouse}</b>
+                            </div>
+                          )}
+                        </td>
                         <td style={{ padding: '12px' }}>
                           <span style={{ 
                             padding: '4px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: '500',
@@ -1420,17 +1462,28 @@ const Dashboard = ({ onLogout }) => {
                     {TERMINAL_OPTIONS.map(terminal => <option key={terminal} value={terminal}>{terminal}</option>)}
                   </select>
                 </div>
-                <div style={{ flex: 1 }}>
-                  <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)' }}>{newItemStatus === 'En Almacén' ? 'Almacén Destino' : 'Área Operativa'}</label>
-                  <select value={newItemArea} onChange={(e) => setNewItemArea(e.target.value)}  style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}>
-                    {getAvailableAreas(newItemTerminal, newItemStatus).map(area => <option key={area} value={area}>{area}</option>)}
-                  </select>
-                </div>
+                {newItemStatus !== 'En Almacén' && (
+                  <div style={{ flex: 1 }}>
+                    <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)' }}>Área Operativa</label>
+                    <select value={newItemArea} onChange={(e) => setNewItemArea(e.target.value)} style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}>
+                      {getOperationalAreas(newItemTerminal).map(area => <option key={area} value={area}>{area}</option>)}
+                    </select>
+                  </div>
+                )}
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)' }}>Almacén Base / Asignado</label>
-                <select value={newItemWarehouse} onChange={(e) => setNewItemWarehouse(e.target.value)} style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}>
+                <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)' }}>
+                  {newItemStatus === 'En Almacén' ? 'Almacén Destino / Asignado' : 'Almacén Base al que Pertenece'}
+                </label>
+                <select
+                  value={newItemWarehouse}
+                  onChange={(e) => {
+                    setNewItemWarehouse(e.target.value);
+                    if (newItemStatus === 'En Almacén') setNewItemArea(e.target.value);
+                  }}
+                  style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
+                >
                   {(WAREHOUSES_DATA[newItemTerminal] || []).map(w => (
                     <option key={w.name} value={w.name}>{w.name} ({w.location})</option>
                   ))}
