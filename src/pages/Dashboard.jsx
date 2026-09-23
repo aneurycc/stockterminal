@@ -124,6 +124,7 @@ const Dashboard = ({ onLogout }) => {
   const [newItemTerminal, setNewItemTerminal] = useState(TERMINAL_OPTIONS[0]);
   const [newItemOwner, setNewItemOwner] = useState(TERMINAL_OPTIONS[0]);
   const [newItemArea, setNewItemArea] = useState(AREAS_GENERAL[0]);
+  const [newItemWarehouse, setNewItemWarehouse] = useState('');
   const [newItemQuantity, setNewItemQuantity] = useState(1);
 
   const [editNewImage, setEditNewImage] = useState(null);
@@ -250,11 +251,20 @@ const Dashboard = ({ onLogout }) => {
   const typeSuggestions = useMemo(() => Array.from(new Set(inventory.map(i => i.name))), [inventory]);
 
   useEffect(() => {
-    const allowedAreas = getAreasForTerminal(newItemTerminal, newItemStatus);
-    if (!allowedAreas.includes(newItemArea)) {
-        setNewItemArea(allowedAreas[0]);
+    const whs = WAREHOUSES_DATA[newItemTerminal] || [];
+    if (whs.length > 0 && !whs.some(w => w.name === newItemWarehouse)) {
+      setNewItemWarehouse(whs[0].name);
     }
-  }, [newItemTerminal, newItemStatus]);
+  }, [newItemTerminal]);
+
+  useEffect(() => {
+    const allowedAreas = getAreasForTerminal(newItemTerminal, newItemStatus);
+    if (newItemStatus === 'En Almacén') {
+      if (newItemWarehouse) setNewItemArea(newItemWarehouse);
+    } else if (!allowedAreas.includes(newItemArea)) {
+      setNewItemArea(allowedAreas[0]);
+    }
+  }, [newItemTerminal, newItemStatus, newItemWarehouse]);
   
   useEffect(() => {
     // When editing, also validate area
@@ -506,6 +516,9 @@ const Dashboard = ({ onLogout }) => {
        autoDeductedLogs.push(`[${now}] ${createdFromScratch} unidades registradas como stock nuevo (No provenientes de almacén).`);
     }
 
+    const termWarehouses = WAREHOUSES_DATA[newItemTerminal] || [];
+    const assignedWarehouse = newItemWarehouse || (termWarehouses.length > 0 ? termWarehouses[0].name : '');
+
     const newItem = {
       id: Date.now(),
       name: newItemName.trim(),
@@ -513,12 +526,13 @@ const Dashboard = ({ onLogout }) => {
       terminal: newItemTerminal,
       ownerTerminal: newItemTerminal,
       owner: newItemTerminal,
-      area: newItemArea,
+      area: newItemStatus === 'En Almacén' ? assignedWarehouse : newItemArea,
+      baseWarehouse: assignedWarehouse,
       isFixedAsset: newItemIsFixedAsset,
       assetNumber: newItemIsFixedAsset ? newItemAssetNumber : '',
       quantity: qty,
       image: newItemImage,
-      history: [`[${now}] Equipo Registrado. Estado Inicial: ${newItemStatus}. Cantidad: ${qty}.`, ...autoDeductedLogs]
+      history: [`[${now}] Equipo Registrado. Estado Inicial: ${newItemStatus}. Ubicación: ${newItemArea}. Almacén Base: ${assignedWarehouse}. Cantidad: ${qty}.`, ...autoDeductedLogs]
     };
 
     setInventory([...newInventory, newItem]);
@@ -737,9 +751,24 @@ const Dashboard = ({ onLogout }) => {
     const val = e.target.value;
     setEditFormData(prev => {
       let updated = { ...prev, [field]: val };
-      if (field === 'terminal' && val === 'Terminal B2' && updated.status !== 'En Almacén') updated.area = 'ML';
+      if (field === 'terminal') {
+        const whs = WAREHOUSES_DATA[val] || [];
+        if (whs.length > 0 && (!updated.baseWarehouse || !whs.some(w => w.name === updated.baseWarehouse))) {
+          updated.baseWarehouse = whs[0].name;
+        }
+        if (val === 'Terminal B2' && updated.status !== 'En Almacén') updated.area = 'ML';
+      }
       
-      if (field === 'status' && prev.status === 'En Almacén' && val !== 'En Almacén') updated.area = getAvailableAreas(updated.terminal)[0];
+      if (field === 'status') {
+        if (val === 'En Almacén') {
+          const whs = WAREHOUSES_DATA[updated.terminal] || [];
+          const defaultWh = whs.length > 0 ? whs[0].name : '';
+          updated.area = updated.baseWarehouse || defaultWh;
+        } else if (prev.status === 'En Almacén') {
+          const normalAreas = getAreasForTerminal(updated.terminal, val);
+          updated.area = normalAreas[0];
+        }
+      }
       return updated;
     });
   };
@@ -1251,11 +1280,20 @@ const Dashboard = ({ onLogout }) => {
                   </select>
                 </div>
                 <div style={{ flex: 1 }}>
-                  <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)' }}>{newItemStatus === 'En Almacén' ? 'Almacén Destino' : 'Área'}</label>
+                  <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)' }}>{newItemStatus === 'En Almacén' ? 'Almacén Destino' : 'Área Operativa'}</label>
                   <select value={newItemArea} onChange={(e) => setNewItemArea(e.target.value)}  style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}>
                     {getAvailableAreas(newItemTerminal, newItemStatus).map(area => <option key={area} value={area}>{area}</option>)}
                   </select>
                 </div>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)' }}>Almacén Base / Asignado</label>
+                <select value={newItemWarehouse} onChange={(e) => setNewItemWarehouse(e.target.value)} style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}>
+                  {(WAREHOUSES_DATA[newItemTerminal] || []).map(w => (
+                    <option key={w.name} value={w.name}>{w.name} ({w.location})</option>
+                  ))}
+                </select>
               </div>
 
               <div>
