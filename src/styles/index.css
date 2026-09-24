@@ -396,10 +396,13 @@ tr:hover {
 /* Fix Mobile Layout */
 @media (max-width: 600px) {
   .top-nav {
+    position: relative !important;
+    padding: 0 !important;
+  }
+  .top-nav > div {
     flex-direction: column !important;
     gap: 15px;
-    padding: 15px 0 !important;
-    position: relative !important;
+    padding: 15px 20px !important;
   }
   .top-nav-group-logo {
     width: 100%;

@@ -1078,7 +1078,7 @@ const Dashboard = ({ onLogout }) => {
         prestadosItems={prestadosItems} 
       />
 
-      <div className="dashboard-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+      <div className="dashboard-grid">
         {/* Gráfico Analítico */}
         <div className="material-card no-print" style={{ padding: '20px', height: '420px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
           <h3 style={{ color: 'var(--q-dark)', marginBottom: '0px', fontSize: '16px' }}>
@@ -1112,7 +1112,7 @@ const Dashboard = ({ onLogout }) => {
           </div>
 
           {/* Pestañas de Terminales */}
-          <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', borderBottom: '1px solid var(--q-secondary)', paddingBottom: '8px' }}>
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', borderBottom: '1px solid var(--q-secondary)', paddingBottom: '8px', flexWrap: 'wrap' }}>
             {TERMINAL_OPTIONS.map(term => {
               const isSelected = activeWarehouseTab === term;
               const termWarehouses = WAREHOUSES_DATA[term] || [];
@@ -1219,7 +1219,7 @@ const Dashboard = ({ onLogout }) => {
             <h3 style={{ color: 'var(--q-dark)', margin: 0 }}>
               Detalle de Inventario ({tableTotalItems} unidades)
             </h3>
-            <div style={{ display: 'flex', gap: '10px' }} className="no-print">
+            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }} className="no-print">
               <button onClick={() => setShowTextFilters(!showTextFilters)} className="btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: '5px', background: showTextFilters ? 'var(--q-accent)' : '', color: showTextFilters ? 'white' : '' }}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
                 Filtrar
