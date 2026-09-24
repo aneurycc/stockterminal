@@ -558,7 +558,7 @@ const Dashboard = ({ onLogout }) => {
     if (editingId && editingId !== item.id) {
       const prevEditingItem = inventory.find(i => i.id === editingId);
       if (prevEditingItem && prevEditingItem.isDraft) {
-        setInventory(prev => prev.filter(i => i.id !== editingId));
+        setInventory(inventory.filter(i => i.id !== editingId));
       }
     }
     const whs = WAREHOUSES_DATA[item.terminal] || [];
