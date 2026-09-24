@@ -1392,11 +1392,6 @@ const Dashboard = ({ onLogout }) => {
 
                         <td style={{ padding: '12px' }}>
                           <div>{item.area}</div>
-                          {item.status !== 'En Almacén' && item.baseWarehouse && (
-                            <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '3px' }}>
-                              📦 Pertenece a: <b>{item.baseWarehouse}</b>
-                            </div>
-                          )}
                         </td>
                         <td style={{ padding: '12px' }}>
                           <span style={{ 
