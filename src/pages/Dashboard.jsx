@@ -76,6 +76,7 @@ const getAreasForTerminal = (term, status) => {
 const STATUS_COLORS = { 'En uso': '#21BA45', 'En Almacén': '#3498db', 'Inhabilitado': '#e74c3c', 'Decomisado': '#7f8c8d', 'Por decomisar': '#f1c40f', 'En reparación': '#9b59b6', 'Terminal A': '#1abc9c', 'Terminal B': '#e67e22', 'Terminal B2': '#9b59b6' };
 
 const Dashboard = ({ onLogout }) => {
+  const now = nowString();
   const { inventory, saveInventory: setInventory, isLoading, globalLogs, addGlobalLog } = useInventory();
   const currentUser = localStorage.getItem('gpc_user') || 'gerente';
   const [isGlobalLogOpen, setIsGlobalLogOpen] = useState(false);
@@ -410,6 +411,7 @@ const Dashboard = ({ onLogout }) => {
   const handleReplacePhoto = async (e, oldPhotoData) => {
     const file = e.target.files[0];
     if (!file) return;
+    const now = nowString();
     try {
       const compressedBase64 = await compressImage(file);
             let updatedItem = { ...selectedImage };
@@ -437,8 +439,8 @@ const Dashboard = ({ onLogout }) => {
 
   const handleDeletePhoto = (photoData) => {
     if (!window.confirm("¿Seguro que deseas eliminar esta foto?")) return;
-    
-        let updatedItem = { ...selectedImage };
+    const now = nowString();
+    let updatedItem = { ...selectedImage };
     let historyLog = `[${now}] Foto eliminada desde la galería.`;
 
     if (updatedItem.images && updatedItem.images.length > 1) {
@@ -462,6 +464,8 @@ const Dashboard = ({ onLogout }) => {
 
   const handleAddItem = (e) => {
     e.preventDefault();
+    try {
+      const now = nowString();
     const qty = parseInt(newItemQuantity, 10);
     if (!newItemName.trim() || isNaN(qty) || qty < 1) {
       alert("Por favor, ingrese un nombre válido y una cantidad mayor a 0.");
@@ -493,6 +497,7 @@ const Dashboard = ({ onLogout }) => {
       assetNumber: newItemIsFixedAsset ? newItemAssetNumber : '',
       quantity: qty,
       image: newItemImage,
+      images: newItemImage ? [{ data: newItemImage, status: newItemStatus, date: now }] : undefined,
       history: [`[${now}] Equipo Registrado. Estado Inicial: ${newItemStatus}. Ubicación: ${finalNewArea}. Almacén Base: ${assignedWarehouse}. Cantidad: ${qty}.`]
     };
 
@@ -543,6 +548,10 @@ const Dashboard = ({ onLogout }) => {
     setTimeout(() => {
       alert(`✅ Equipo "${newItem.name}" (${newItem.quantity} unidades) registrado exitosamente.`);
     }, 50);
+    } catch (err) {
+      console.error('[ERROR] Fallo al registrar equipo:', err);
+      alert('Error al registrar equipo: ' + (err.message || err));
+    }
   };
 
   const handleEditClick = (item) => {
@@ -572,6 +581,7 @@ const Dashboard = ({ onLogout }) => {
   };
   
   const handleSaveEdit = (id) => {
+    const now = nowString();
     const parsedQty = parseInt(editFormData.quantity, 10);
     if (isNaN(parsedQty) || parsedQty < 1 || !editFormData.name?.trim()) {
       alert("Error: Nombre inválido o cantidad menor a 1.");
@@ -861,7 +871,8 @@ const Dashboard = ({ onLogout }) => {
   };
 
   const handleCloneItem = (item) => {
-        const cloned = {
+    const now = nowString();
+    const cloned = {
       ...item,
       id: Date.now(),
       isDraft: true,
