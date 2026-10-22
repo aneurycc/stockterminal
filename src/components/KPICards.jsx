@@ -1,6 +1,5 @@
 import React from 'react';
 
-const COLORS = ['#21BA45', '#C10015', '#9E9E9E', '#F2C037', '#FF9800', '#43B02A'];
 
 const KPICards = ({ totalItems, operativosItems, danadosItems, prestadosItems }) => {
   return (

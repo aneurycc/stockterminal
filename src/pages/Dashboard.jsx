@@ -1,15 +1,13 @@
 import html2canvas from 'html2canvas';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { Trash2, Clock, Upload, Copy, Plus, Moon, Sun, Package, Camera, RefreshCw, Activity, ChevronDown , Share2, Download } from 'lucide-react';
+import { Trash2, Clock, Upload, Copy, Plus, Moon, Sun, Package, Camera, RefreshCw, Activity, Share2, Download } from 'lucide-react';
 import { useInventory } from '../hooks/useInventory';
 import * as XLSX from 'xlsx';
 import KPICards from '../components/KPICards';
 
 const nowString = () => new Date().toLocaleString();
 
-// Datos iniciales vaciados por instrucción de producción
-const initialInventory = [];
 
 // NOTA: Se ha eliminado "Prestado" porque ahora es una relación estructural (owner !== terminal)
 const STATUS_OPTIONS = ['En uso', 'En Almacén', 'Inhabilitado', 'Decomisado', 'En reparación', 'En proceso de decomiso'];
@@ -88,9 +86,7 @@ const Dashboard = ({ onLogout }) => {
   const [filterStatus, setFilterStatus] = useState('Todos');
   const [filterType, setFilterType] = useState('Todos');
   const [filterIsProperty, setFilterIsProperty] = useState(false);
-  const [colFilterEquipo, setColFilterEquipo] = useState('Todos');
-  const [colFilterArea, setColFilterArea] = useState('Todas');
-  const [colFilterEstado, setColFilterEstado] = useState('Todos');
+
   const [showTextFilters, setShowTextFilters] = useState(false);
   const [textFilterEquipo, setTextFilterEquipo] = useState('');
   const [textFilterArea, setTextFilterArea] = useState('');
@@ -127,7 +123,6 @@ const Dashboard = ({ onLogout }) => {
   const [newItemName, setNewItemName] = useState('');
   const [newItemStatus, setNewItemStatus] = useState(STATUS_OPTIONS[0]);
   const [newItemTerminal, setNewItemTerminal] = useState(TERMINAL_OPTIONS[0]);
-  const [newItemOwner, setNewItemOwner] = useState(TERMINAL_OPTIONS[0]);
   const [newItemArea, setNewItemArea] = useState(AREAS_GENERAL[0]);
   const [newItemWarehouse, setNewItemWarehouse] = useState('');
   const [newItemQuantity, setNewItemQuantity] = useState(1);
@@ -243,8 +238,7 @@ const Dashboard = ({ onLogout }) => {
   // Inyección de Data Ficticia para pruebas
   useEffect(() => {
     if (!isLoading && inventory.length === 0) {
-      const now = nowString();
-      
+            
           }
   }, [isLoading, inventory.length]);
 
@@ -418,8 +412,7 @@ const Dashboard = ({ onLogout }) => {
     if (!file) return;
     try {
       const compressedBase64 = await compressImage(file);
-      const now = nowString();
-      let updatedItem = { ...selectedImage };
+            let updatedItem = { ...selectedImage };
       let historyLog = `[${now}] Foto cambiada desde la galería.`;
       
       if (updatedItem.images) {
@@ -437,6 +430,7 @@ const Dashboard = ({ onLogout }) => {
       setSelectedImage(updatedItem);
       addGlobalLog(currentUser, `Foto reemplazada para el equipo: ${updatedItem.name}.`);
     } catch (err) {
+      console.error(err);
       alert("Error al procesar la imagen");
     }
   };
@@ -444,8 +438,7 @@ const Dashboard = ({ onLogout }) => {
   const handleDeletePhoto = (photoData) => {
     if (!window.confirm("¿Seguro que deseas eliminar esta foto?")) return;
     
-    const now = nowString();
-    let updatedItem = { ...selectedImage };
+        let updatedItem = { ...selectedImage };
     let historyLog = `[${now}] Foto eliminada desde la galería.`;
 
     if (updatedItem.images && updatedItem.images.length > 1) {
@@ -483,8 +476,7 @@ const Dashboard = ({ onLogout }) => {
       }
     }
 
-    const now = nowString();
-    const termWarehouses = WAREHOUSES_DATA[newItemTerminal] || [];
+        const termWarehouses = WAREHOUSES_DATA[newItemTerminal] || [];
     const assignedWarehouse = newItemWarehouse || (termWarehouses.length > 0 ? termWarehouses[0].name : '');
     const finalNewArea = newItemStatus === 'En Almacén' ? assignedWarehouse : newItemArea;
 
@@ -622,8 +614,7 @@ const Dashboard = ({ onLogout }) => {
     }
 
     const qtyDelta = original.quantity - parsedQty;
-    const now = nowString();
-    const hasDestinationChanged = original.status !== editFormData.status || original.area !== finalArea || original.terminal !== editFormData.terminal;
+        const hasDestinationChanged = original.status !== editFormData.status || original.area !== finalArea || original.terminal !== editFormData.terminal;
 
     let historyLog = `[${now}] Editado. `;
     if (original.status !== editFormData.status) historyLog += `Estado cambió de "${original.status}" a "${editFormData.status}". `;
@@ -834,15 +825,25 @@ const Dashboard = ({ onLogout }) => {
       alert("No hay datos para exportar.");
       return;
     }
+    // OWASP A03 / Mitigación de CSV Formula Injection (=, +, -, @, \t, \r)
+    const sanitizeCSV = (val) => {
+      if (val === null || val === undefined) return '';
+      let str = String(val).replace(/"/g, '""');
+      if (/^[=+\-@\t\r]/.test(str)) {
+        str = `'${str}`;
+      }
+      return str;
+    };
+
     const headers = ["Nombre", "Terminal", "Area", "Estado", "Cantidad", "Activo Fijo", "Propietario"];
     const rows = filteredInventory.map(item => [
-      `"${(item.name || '').replace(/"/g, '""')}"`,
-      `"${(item.terminal || '').replace(/"/g, '""')}"`,
-      `"${(item.area || '').replace(/"/g, '""')}"`,
-      `"${(item.status || '').replace(/"/g, '""')}"`,
+      `"${sanitizeCSV(item.name)}"`,
+      `"${sanitizeCSV(item.terminal)}"`,
+      `"${sanitizeCSV(item.area)}"`,
+      `"${sanitizeCSV(item.status)}"`,
       item.quantity || 1,
-      `"${item.isFixedAsset && item.assetNumber ? item.assetNumber.replace(/"/g, '""') : ''}"`,
-      `"${(item.ownerTerminal || item.terminal || '').replace(/"/g, '""')}"`
+      `"${sanitizeCSV(item.isFixedAsset && item.assetNumber ? item.assetNumber : '')}"`,
+      `"${sanitizeCSV(item.ownerTerminal || item.terminal || '')}"`
     ]);
     
     // Usamos punto y coma (;) porque Excel en español no reconoce la coma por defecto
@@ -853,15 +854,14 @@ const Dashboard = ({ onLogout }) => {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.setAttribute("href", url);
-    link.setAttribute("download", `Inventario_GPC_${nowString().replace(/[\/ :,]/g, '_')}.csv`);
+    link.setAttribute("download", `Inventario_GPC_${nowString().replace(/[/ :,]/g, '_')}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
   const handleCloneItem = (item) => {
-    const now = nowString();
-    const cloned = {
+        const cloned = {
       ...item,
       id: Date.now(),
       isDraft: true,
@@ -1254,16 +1254,26 @@ const Dashboard = ({ onLogout }) => {
             <table style={{ width: '100%', borderCollapse: 'collapse', backgroundColor: 'white' }}>
               <thead>
                 <tr style={{ borderBottom: '2px solid var(--q-secondary)', color: 'var(--text-muted)' }}>
-                  <th style={{ padding: '12px', textAlign: 'left', fontWeight: '500' }}>Equipo</th>
-                  <th style={{ padding: '12px', textAlign: 'left', fontWeight: '500' }}>Cant.</th>
-                  <th style={{ padding: '12px', textAlign: 'left', fontWeight: '500' }}>Ubicación</th>
-                  <th style={{ padding: '12px', textAlign: 'left', fontWeight: '500' }}>Área</th>
-                  <th style={{ padding: '12px', textAlign: 'left', fontWeight: '500' }}>Estado</th>
+                  <th onClick={() => requestSort('name')} style={{ padding: '12px', textAlign: 'left', fontWeight: '500', cursor: 'pointer', userSelect: 'none' }} title="Ordenar por Nombre de Equipo">
+                    Equipo {sortConfig.key === 'name' ? (sortConfig.direction === 'ascending' ? '▲' : '▼') : ''}
+                  </th>
+                  <th onClick={() => requestSort('quantity')} style={{ padding: '12px', textAlign: 'left', fontWeight: '500', cursor: 'pointer', userSelect: 'none' }} title="Ordenar por Cantidad">
+                    Cant. {sortConfig.key === 'quantity' ? (sortConfig.direction === 'ascending' ? '▲' : '▼') : ''}
+                  </th>
+                  <th onClick={() => requestSort('terminal')} style={{ padding: '12px', textAlign: 'left', fontWeight: '500', cursor: 'pointer', userSelect: 'none' }} title="Ordenar por Ubicación / Terminal">
+                    Ubicación {sortConfig.key === 'terminal' ? (sortConfig.direction === 'ascending' ? '▲' : '▼') : ''}
+                  </th>
+                  <th onClick={() => requestSort('area')} style={{ padding: '12px', textAlign: 'left', fontWeight: '500', cursor: 'pointer', userSelect: 'none' }} title="Ordenar por Área / Almacén">
+                    Área {sortConfig.key === 'area' ? (sortConfig.direction === 'ascending' ? '▲' : '▼') : ''}
+                  </th>
+                  <th onClick={() => requestSort('status')} style={{ padding: '12px', textAlign: 'left', fontWeight: '500', cursor: 'pointer', userSelect: 'none' }} title="Ordenar por Estado">
+                    Estado {sortConfig.key === 'status' ? (sortConfig.direction === 'ascending' ? '▲' : '▼') : ''}
+                  </th>
                   <th className="no-print" style={{ padding: '12px', textAlign: 'center', fontWeight: '500', minWidth: '150px' }}>Acciones</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredInventory.map(item => (
+                {sortedInventory.map(item => (
                   <tr key={item.id} style={{ borderBottom: '1px solid #eee' }}>
                     {editingId === item.id ? (
                       <>
@@ -1276,7 +1286,7 @@ const Dashboard = ({ onLogout }) => {
                                  if (f) {
                                    try {
                                      setEditNewImage(await compressImage(f));
-                                   } catch(err){ alert("Error"); }
+                                   } catch(err){ console.error(err); alert("Error"); }
                                  }
                               }} />
                             </label>
@@ -1646,7 +1656,7 @@ const Dashboard = ({ onLogout }) => {
                 onChange={(e) => setDeletePassword(e.target.value)} 
                 onPaste={(e) => e.preventDefault()}
                 style={{ width: '100%', outline: 'none', fontFamily: 'monospace', letterSpacing: '1px' }}
-                placeholder="CONFIRMO"
+                
               />
             </div>
             <div style={{ display: 'flex', gap: '10px' }}>

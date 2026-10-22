@@ -31,7 +31,7 @@ function App() {
           path="/dashboard" 
           element={
             <PrivateRoute isAuthenticated={isAuthenticated}>
-              <Dashboard onLogout={() => setIsAuthenticated(false)} />
+              <Dashboard onLogout={() => { localStorage.removeItem('gpc_user'); setIsAuthenticated(false); }} />
             </PrivateRoute>
           } 
         />
