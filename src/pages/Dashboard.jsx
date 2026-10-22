@@ -463,7 +463,7 @@ const Dashboard = ({ onLogout }) => {
   };
 
   const handleAddItem = (e) => {
-    e.preventDefault();
+    if (e && e.preventDefault) e.preventDefault();
     try {
       const now = nowString();
     const qty = parseInt(newItemQuantity, 10);
@@ -504,7 +504,7 @@ const Dashboard = ({ onLogout }) => {
     // Consolidation check for new item if not fixed asset
     const existingIndex = !newItem.isFixedAsset ? inventory.findIndex(i => 
       !i.isFixedAsset &&
-      i.name.trim().toLowerCase() === newItem.name.trim().toLowerCase() &&
+      (i.name || '').trim().toLowerCase() === newItem.name.trim().toLowerCase() &&
       i.terminal === newItem.terminal &&
       i.area === newItem.area &&
       i.status === newItem.status
@@ -1598,7 +1598,7 @@ const Dashboard = ({ onLogout }) => {
                 </div>
               </div>
 
-              <button type="submit" className="btn-primary" style={{ marginTop: '10px', padding: '12px' }}>GUARDAR REGISTRO</button>
+              <button type="button" onClick={handleAddItem} className="btn-primary" style={{ marginTop: '10px', padding: '14px', width: '100%', fontSize: '15px', fontWeight: 'bold', cursor: 'pointer' }}>GUARDAR REGISTRO</button>
             </form>
           </div>
         </div>
