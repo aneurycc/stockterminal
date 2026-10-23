@@ -24,3 +24,6 @@ src/archive
 *.njsproj
 *.sln
 *.sw?
+
+# Office temp files
+~$*

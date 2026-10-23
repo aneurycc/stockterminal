@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Manual de Uso e Instructivo Operativo — Stock Terminal GPC</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
+    
+    body {
+      font-family: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      line-height: 1.6;
+      color: #2c3e50;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 40px 20px;
+      background-color: #ffffff;
+    }
+
+    .header-banner {
+      border-bottom: 3px solid #006B3F;
+      padding-bottom: 20px;
+      margin-bottom: 30px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .header-title h1 {
+      margin: 0;
+      color: #006B3F;
+      font-size: 24px;
+      font-weight: 700;
+    }
+
+    .header-title p {
+      margin: 5px 0 0 0;
+      color: #64748b;
+      font-size: 14px;
+    }
+
+    .badge {
+      background: #006B3F;
+      color: white;
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    h2 {
+      color: #0f172a;
+      border-left: 4px solid #006B3F;
+      padding-left: 12px;
+      margin-top: 35px;
+      font-size: 18px;
+    }
+
+    h3 {
+      color: #1e293b;
+      font-size: 15px;
+      margin-top: 25px;
+    }
+
+    p, li {
+      font-size: 13.5px;
+      color: #334155;
+    }
+
+    ul, ol {
+      padding-left: 20px;
+    }
+
+    li {
+      margin-bottom: 6px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 20px 0;
+      font-size: 12.5px;
+    }
+
+    th, td {
+      border: 1px solid #e2e8f0;
+      padding: 10px 12px;
+      text-align: left;
+    }
+
+    th {
+      background-color: #f8fafc;
+      color: #0f172a;
+      font-weight: 600;
+    }
+
+    tr:nth-child(even) {
+      background-color: #fdfdfd;
+    }
+
+    .note-box {
+      background-color: #f0fdf4;
+      border: 1px solid #bbf7d0;
+      border-left: 4px solid #006B3F;
+      padding: 14px 16px;
+      border-radius: 6px;
+      margin: 20px 0;
+      font-size: 13px;
+    }
+
+    .note-box strong {
+      color: #006B3F;
+    }
+
+    .footer {
+      margin-top: 50px;
+      padding-top: 20px;
+      border-top: 1px solid #e2e8f0;
+      text-align: center;
+      font-size: 12px;
+      color: #94a3b8;
+    }
+
+    @media print {
+      body {
+        padding: 0;
+        max-width: 100%;
+      }
+      .no-print {
+        display: none;
+      }
+      h2 {
+        page-break-after: avoid;
+      }
+      table {
+        page-break-inside: avoid;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="no-print" style="background: #f1f5f9; padding: 12px 20px; border-radius: 8px; margin-bottom: 25px; display: flex; justify-content: space-between; align-items: center;">
+    <span style="font-size: 13px; color: #475569;">💡 <b>Instrucción para guardar como PDF:</b> Presiona <b>Ctrl + P</b> (o Cmd + P en Mac) y selecciona "Guardar como PDF" como impresora.</span>
+    <button onclick="window.print()" style="background: #006B3F; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 13px;">Imprimir / Guardar PDF</button>
+  </div>
+
+  <div class="header-banner">
+    <div class="header-title">
+      <h1>Manual de Uso e Instructivo Operativo</h1>
+      <p>Sistema de Gestión Logística de Inventario Aeroportuario — Grupo Puntacana</p>
+    </div>
+    <div class="badge">Versión 2.0</div>
+  </div>
+
+  <h2>1. Introducción y Propósito del Sistema</h2>
+  <p><b>Stock Terminal GPC</b> es una plataforma web progresiva (PWA) de alta velocidad diseñada específicamente para la administración, rastreo y control de equipos, herramientas y activos fijos distribuidos a lo largo de las terminales aeroportuarias (Terminal A, Terminal B, Terminal B2, FBO, Carga y áreas operativas).</p>
+  
+  <ul>
+    <li><b>Cero Papel:</b> Registro digital instantáneo con historial inmutable de movimientos.</li>
+    <li><b>Control de Préstamos Inter-Terminales:</b> Detección automática de qué equipos pertenecen a una terminal pero están prestando servicio en otra.</li>
+    <li><b>Operación Offline:</b> Capacidad de operar en zonas de rampa, pistas o hangares sin conexión directa a internet.</li>
+    <li><b>Carga Masiva:</b> Importación ágil de inventarios heredados desde hojas de cálculo Excel (<code>.xlsx</code>, <code>.csv</code>).</li>
+  </ul>
+
+  <h2>2. Anatomía del Panel Principal (Dashboard)</h2>
+  <ol>
+    <li><b>Barra de Navegación:</b> Permite alternar Modo Claro/Oscuro, dar de alta nuevos equipos y cerrar sesión.</li>
+    <li><b>Tarjetas de Indicadores Clave (KPIs):</b> Muestran en tiempo real el total de equipos activos, operativos en uso, en almacén de resguardo, inhabilitados por avería y prestados hacia otras terminales.</li>
+    <li><b>Módulo de Almacenes Oficiales:</b> Directorio de 22 almacenes distribuidos en pestañas por Terminal, indicando el número exacto de unidades resguardadas en cada uno.</li>
+    <li><b>Barra de Herramientas:</b> Acceso rápido a filtros avanzados, bitácora histórica, vista de impresión, importación desde Excel y exportación CSV compatible con Microsoft Excel.</li>
+    <li><b>Tabla Maestra de Inventario:</b> Visualización detallada de cada lote con fotografía, número de activo, terminal, área física, cantidad y opciones de gestión. Incluye ordenamiento haciendo clic en cualquier columna.</li>
+  </ol>
+
+  <h2>3. Guía de Operaciones Comunes</h2>
+
+  <h3>3.1 Cómo Registrar un Equipo Individualmente</h3>
+  <ol>
+    <li>Haga clic en el botón superior <b>"+ NUEVO EQUIPO"</b>.</li>
+    <li>Complete los campos obligatorios:
+      <ul>
+        <li><b>Ubicación Física:</b> Terminal donde se encuentra físicamente el lote.</li>
+        <li><b>Área Operativa:</b> Subzona operativa de trabajo (Gate, Check-in, Rampa, etc.).</li>
+        <li><b>Almacén Base al que Pertenece:</b> Almacén de custodia principal.</li>
+        <li><b>Nombre del Equipo:</b> Descripción o modelo del artículo.</li>
+        <li><b>Cant.:</b> Número de unidades.</li>
+        <li><b>Estado Inicial:</b> <i>En uso</i>, <i>En Almacén</i>, <i>Inhabilitado</i> o <i>Decomisado</i>.</li>
+        <li><b>¿Activo Fijo?:</b> Marcar si posee placa de activo fijo e ingresar su código único.</li>
+        <li><b>Fotografía (Opcional):</b> Puede adjuntar una foto o capturarla con la cámara del dispositivo móvil.</li>
+      </ul>
+    </li>
+    <li>Presione <b>"GUARDAR REGISTRO"</b>.</li>
+  </ol>
+
+  <h3>3.2 Carga Masiva de Inventario desde Excel (.XLSX / .CSV)</h3>
+  <p>Para cargar el inventario de forma masiva sin ingresar los artículos uno a uno, el archivo de Excel actual de la empresa debe adaptarse a las columnas que reconoce el motor de importación:</p>
+
+  <div class="note-box">
+    <strong>Requisito Importante para la Carga:</strong><br>
+    Para que las informaciones se asignen a las columnas correspondientes en la aplicación, la primera fila de su hoja de Excel debe contener los siguientes encabezados exactos:
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Columna</th>
+        <th>Tipo</th>
+        <th>Descripción / Opciones Válidas</th>
+        <th>Ejemplo</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><b>Nombre</b></td>
+        <td>Obligatorio</td>
+        <td>Modelo o descripción clara del equipo</td>
+        <td>Laptop Dell Latitude 5420</td>
+      </tr>
+      <tr>
+        <td><b>Terminal</b></td>
+        <td>Obligatorio</td>
+        <td>Terminal A, Terminal B o Terminal B2</td>
+        <td>Terminal A</td>
+      </tr>
+      <tr>
+        <td><b>Area</b></td>
+        <td>Obligatorio</td>
+        <td>Área operativa o ubicación física actual</td>
+        <td>Correas check-in 1-4</td>
+      </tr>
+      <tr>
+        <td><b>Almacen Base</b></td>
+        <td>Recomendado / Opcional</td>
+        <td>Almacén oficial que custodia o al que pertenece el equipo</td>
+        <td>Almacén Principal A</td>
+      </tr>
+      <tr>
+        <td><b>Estado</b></td>
+        <td>Obligatorio</td>
+        <td>En uso, En Almacén, Inhabilitado, Decomisado</td>
+        <td>En Almacén</td>
+      </tr>
+      <tr>
+        <td><b>Cantidad</b></td>
+        <td>Obligatorio</td>
+        <td>Número entero mayor a cero</td>
+        <td>10</td>
+      </tr>
+      <tr>
+        <td><b>Activo Fijo</b></td>
+        <td>Opcional</td>
+        <td>Código único de placa de activo fijo institucional</td>
+        <td>GPC-847291</td>
+      </tr>
+      <tr>
+        <td><b>Propietario</b></td>
+        <td>Opcional</td>
+        <td>Terminal dueña original del equipo (para préstamos)</td>
+        <td>Terminal A</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="note-box" style="background-color: #f8fafc; border-left-color: #64748b;">
+    <strong>Nota sobre Fotografías:</strong> Los archivos de Excel no soportan la vinculación directa de imágenes en la base de datos local. Las fotografías de los equipos se adjuntan cómodamente haciendo clic en el botón <b>Editar</b> (icono de lápiz) en el registro correspondiente dentro del sistema una vez importado.
+  </div>
+
+  <h4>Pasos para Importar:</h4>
+  <ol>
+    <li>Prepare el archivo Excel siguiendo la estructura anterior.</li>
+    <li>En la plataforma, presione el botón azul <b>"Importar Excel"</b>.</li>
+    <li>Seleccione el archivo. El sistema cargará todos los equipos en cuestión de segundos.</li>
+    <li><b>Prevención de Duplicados:</b> Si el sistema detecta que un número de Activo Fijo ya existe previamente en la base de datos, lo omitirá de forma automática para evitar registros duplicados.</li>
+  </ol>
+
+  <h3>3.3 Búsqueda, Filtrado y Consulta de Stock por Almacén</h3>
+  <p>Al realizar una búsqueda o filtro por un artículo en específico (por ejemplo: <i>"Radio Motorola"</i> o <i>"Separador de Terminales"</i>):</p>
+  <ul>
+    <li><b>Desglose por Almacén en la Tabla:</b> La tabla mostrará cada fila indicando la <b>Terminal</b>, el <b>Almacén / Área exacta</b> y la <b>Cantidad precisa de unidades</b> disponibles en ese punto físico.</li>
+    <li><b>Resumen Consolidado:</b> En la parte superior, los indicadores totalizan el stock general del artículo y el gráfico analítico ilustra su distribución entre terminales y estados operativos.</li>
+    <li><b>Filtrado Directo por Almacén:</b> Al hacer clic en cualquiera de las tarjetas del módulo de Almacenes, la tabla filtra automáticamente los equipos resguardados exclusivamente en dicho almacén.</li>
+  </ul>
+
+  <h3>3.4 Traslados, Préstamos y División de Stock (Stock Splitting)</h3>
+  <p>Cuando se requiere mover solo una parte del stock hacia otro almacén o terminal:</p>
+  <ol>
+    <li>En la tabla, haga clic en <b>"Editar"</b> (icono de lápiz) sobre el equipo deseado.</li>
+    <li>Modifique la <b>Cantidad</b> (ej. cambie de 10 a 4) y seleccione la nueva <b>Terminal</b> o <b>Área de destino</b>.</li>
+    <li>El sistema mantendrá las unidades restantes en el origen y creará una nueva partida en el destino, conservando la trazabilidad histórica completa.</li>
+  </ol>
+
+  <div class="footer">
+    © 2026 Grupo Puntacana — Sistema de Control y Gestión de Inventario Aeroportuario.
+  </div>
+
+</body>
+</html>

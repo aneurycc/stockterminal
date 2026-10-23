@@ -355,8 +355,14 @@ const Dashboard = ({ onLogout }) => {
 
           const assetNum = getVal(parsedRow, ['Activo Fijo', 'Activo', 'Asset', 'Num Activo', '# Activo', 'Nro Activo', 'Codigo Activo']);
           
-          const rawOwner = getVal(parsedRow, ['Propietario', 'Owner', 'Dueño', 'Dueno']);
+                    const rawOwner = getVal(parsedRow, ['Propietario', 'Owner', 'Dueño', 'Dueno']);
           const ownerTerminal = (TERMINAL_OPTIONS.includes(rawOwner)) ? rawOwner : terminal;
+
+          // Mapeo de Almacén Base (Base Warehouse)
+          const termWarehouses = WAREHOUSES_DATA[terminal] || [];
+          const defaultWh = termWarehouses.length > 0 ? termWarehouses[0].name : '';
+          const rawBaseWh = getVal(parsedRow, ['Almacen Base', 'Almacén Base', 'Base Warehouse', 'BaseWarehouse', 'Almacen Custodia', 'Almacén Custodia', 'Almacen', 'Almacén']);
+          const baseWarehouse = rawBaseWh || (status === 'En Almacén' ? area : defaultWh);
 
           // Duplicate Asset Number validation
           if (assetNum.length > 0) {
@@ -377,8 +383,9 @@ const Dashboard = ({ onLogout }) => {
             ownerTerminal: ownerTerminal,
             owner: ownerTerminal,
             area: area,
+            baseWarehouse: baseWarehouse,
             status: status,
-            history: [`[${nowString()}] Importado desde Excel/CSV`]
+            history: [`[${nowString()}] Importado desde Excel/CSV. Almacén Base: ${baseWarehouse}.`]
           });
         });
 
@@ -845,11 +852,12 @@ const Dashboard = ({ onLogout }) => {
       return str;
     };
 
-    const headers = ["Nombre", "Terminal", "Area", "Estado", "Cantidad", "Activo Fijo", "Propietario"];
+        const headers = ["Nombre", "Terminal", "Area", "Almacen Base", "Estado", "Cantidad", "Activo Fijo", "Propietario"];
     const rows = filteredInventory.map(item => [
       `"${sanitizeCSV(item.name)}"`,
       `"${sanitizeCSV(item.terminal)}"`,
       `"${sanitizeCSV(item.area)}"`,
+      `"${sanitizeCSV(item.baseWarehouse || (ALL_WAREHOUSE_NAMES.includes(item.area) ? item.area : ''))}"`,
       `"${sanitizeCSV(item.status)}"`,
       item.quantity || 1,
       `"${sanitizeCSV(item.isFixedAsset && item.assetNumber ? item.assetNumber : '')}"`,
