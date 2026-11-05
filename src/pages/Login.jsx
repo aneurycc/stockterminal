@@ -1,12 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Lock, User, Eye, EyeOff, Moon, Sun } from 'lucide-react';
+import { Lock, User, Eye, EyeOff, Moon, Sun, UserCheck } from 'lucide-react';
+import { verifyCredentials } from '../utils/auth';
 
 const Login = ({ onLogin }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [operatorName, setOperatorName] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  
+  const [isVerifying, setIsVerifying] = useState(false);
+
   // Estado Modo Oscuro
   const [isDarkMode, setIsDarkMode] = useState(() => {
     return localStorage.getItem('gpc_theme') === 'dark';
@@ -24,14 +27,25 @@ const Login = ({ onLogin }) => {
 
   const navigate = useNavigate();
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
-    if (username === 'gerente' && password === 'admin123') {
-      localStorage.setItem('gpc_user', username);
-      onLogin(true);
-      navigate('/dashboard'); 
-    } else {
-      alert('Credenciales incorrectas.');
+    if (!operatorName.trim()) {
+      alert('Escribe el nombre del operador que va a usar el sistema.');
+      return;
+    }
+    setIsVerifying(true);
+    try {
+      const ok = await verifyCredentials(username.trim(), password);
+      if (ok) {
+        localStorage.setItem('gpc_user', username.trim());
+        localStorage.setItem('gpc_operator', operatorName.trim());
+        onLogin(true);
+        navigate('/dashboard');
+      } else {
+        alert('Credenciales incorrectas.');
+      }
+    } finally {
+      setIsVerifying(false);
     }
   };
 
@@ -69,7 +83,7 @@ const Login = ({ onLogin }) => {
           <h2 style={{ margin: 0, color: 'var(--q-accent)', fontWeight: 900 }}>Stock <span style={{ color: 'var(--text-main)', fontWeight: 300 }}>Terminal</span></h2>
         </div>
         
-        <button onClick={() => setIsDarkMode(!isDarkMode)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--q-dark)', display: 'flex', alignItems: 'center' }} title="Alternar Modo Oscuro">
+        <button onClick={() => setIsDarkMode(!isDarkMode)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--q-dark)', display: 'flex', alignItems: 'center' }} title="Alternar Modo Oscuro" aria-label="Alternar modo oscuro">
           {isDarkMode ? <Sun size={24} /> : <Moon size={24} />}
         </button>
       </nav>
@@ -95,11 +109,26 @@ const Login = ({ onLogin }) => {
             {/* Input Usuario ID */}
             <div className="material-input-group" style={{ display: 'flex', alignItems: 'center' }}>
               <User color="var(--text-muted)" size={20} style={{ marginLeft: '16px' }} />
-              <input 
-                type="text" 
-                placeholder="Usuario ID" 
+              <input
+                type="text"
+                placeholder="Usuario ID"
+                aria-label="Usuario ID"
+                autoComplete="username"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
+              />
+            </div>
+
+            {/* Input Nombre del Operador: queda registrado en la bitácora de auditoría */}
+            <div className="material-input-group" style={{ display: 'flex', alignItems: 'center' }}>
+              <UserCheck color="var(--text-muted)" size={20} style={{ marginLeft: '16px' }} />
+              <input
+                type="text"
+                placeholder="Nombre del Operador (para la bitácora)"
+                aria-label="Nombre del operador"
+                autoComplete="name"
+                value={operatorName}
+                onChange={(e) => setOperatorName(e.target.value)}
               />
             </div>
 
@@ -108,21 +137,24 @@ const Login = ({ onLogin }) => {
               <Lock color="var(--text-muted)" size={20} style={{ marginLeft: '16px' }} />
               <input 
                 type={showPassword ? "text" : "password"} 
-                placeholder="Contraseña" 
+                placeholder="Contraseña"
+                aria-label="Contraseña"
+                autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
               />
               <button 
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
+                aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
                 style={{ background: 'none', border: 'none', cursor: 'pointer', marginRight: '16px' }}
               >
                 {showPassword ? <EyeOff color="var(--text-muted)" size={20} /> : <Eye color="var(--text-muted)" size={20} />}
               </button>
             </div>
 
-            <button type="submit" className="btn-primary" style={{ padding: '14px', fontSize: '16px', marginTop: '10px' }}>
-              AUTENTICAR
+            <button type="submit" className="btn-primary" disabled={isVerifying} style={{ padding: '14px', fontSize: '16px', marginTop: '10px', opacity: isVerifying ? 0.7 : 1 }}>
+              {isVerifying ? 'VERIFICANDO...' : 'AUTENTICAR'}
             </button>
           </form>
         </div>

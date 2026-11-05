@@ -27,3 +27,6 @@ src/archive
 
 # Office temp files
 ~$*
+
+# Artefactos de herramientas de prueba
+.playwright-mcp/

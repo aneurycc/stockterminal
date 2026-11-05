@@ -7,7 +7,8 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.png', 'pwa-192x192.png', 'pwa-512x512.png'],
+      // terminal-bg.jpg es el fondo del login: se precachea para que funcione sin conexión.
+      includeAssets: ['favicon.png', 'pwa-192x192.png', 'pwa-512x512.png', 'terminal-bg.jpg'],
       manifest: {
         name: 'Stock Terminal',
         short_name: 'StockTerminal',

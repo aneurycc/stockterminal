@@ -1,6 +1,8 @@
 # Auditoría técnica: Stock Terminal GPC
 
-> **Actualización 2026-11-04:** los fallos A2–A10 están corregidos en la rama `fix/integridad-datos` (sin commit). Ver la sección [Estado de las correcciones](#estado-de-las-correcciones-a2a10) al final.
+> **Actualización 2026-11-04:** los fallos A2–A10 están corregidos (commit `5433709`). Ver la sección [Estado de las correcciones](#estado-de-las-correcciones-a2a10) al final.
+>
+> **Actualización 2026-11-05:** el resto de hallazgos está corregido o mitigado en la rama `fix/pendientes`. C1 y A1 solo están mitigados: necesitan un servidor. Ver [Estado de las correcciones (resto de hallazgos)](#estado-de-las-correcciones-resto-de-hallazgos).
 
 **Fecha:** 2026-11-04 · **Commit auditado:** `96db5d7` (rama `main`). Hay cambios locales sin commit en la documentación y en la plantilla de importación (ver B7). · **Alcance:** `src/`, configuración, dependencias y `dist/`. Queda fuera `src/archive/`.
 
@@ -45,7 +47,7 @@ Además encontré **9 errores de lógica que corrompen o pierden datos sin avisa
 
 ### A1 · Alto · El login no protege nada y la bitácora no identifica a nadie. [Reproducido] [Herramienta]
 - **Dónde:**
-  - Credenciales fijas en `src/pages/Login.jsx:29` (`gerente` / `admin123`), visibles en el bundle publicado: `grep admin123 dist/assets/index-BIE50Qvq.js` las encuentra.
+  - Credenciales fijas en `src/pages/Login.jsx:29` (`gerente` / `[contraseña omitida]`), visibles en el bundle publicado: `grep [contraseña omitida] dist/assets/index-BIE50Qvq.js` las encuentra.
   - La "sesión" es solo `localStorage.gpc_auth === 'true'` (`src/App.jsx:9-11`).
   - El usuario por defecto es `'gerente'` (`src/pages/Dashboard.jsx:81`).
 - **Prueba:** en `/login` ejecuté `localStorage.setItem('gpc_auth','true')` y navegué a `/dashboard`. Entré al panel completo con `gpc_user = null`.
@@ -403,3 +405,85 @@ Rama `fix/integridad-datos`, **sin commit**. Archivos: `src/hooks/useInventory.j
 3. **Plantilla oficial:** `Plantilla_Oficial_Carga_Masiva.xlsx` da 3 avisos al importarla ("Almacén Cuarto Técnico", "Rampa Norte"). Hay que corregir la plantilla.
 4. **Préstamos ya perdidos:** los préstamos que la migración antigua borró antes de esta corrección no se pueden recuperar.
 5. **Fuera del alcance de esta corrección:** C1, A1, M1 completo, M2–M6 y B1–B12, con la excepción de los extras ya mencionados.
+
+## Estado de las correcciones (resto de hallazgos)
+
+Rama `fix/pendientes`, **sin commit**. Parte del trabajo lo hizo una sesión de Claude Code en terminal y el resto, junto con la verificación, esta sesión. `dist/` está recompilado.
+
+| Hallazgo | Corrección | Verificación |
+|---|---|---|
+| C1 (mitigación) | Botones **Respaldo** (JSON con inventario, fotos, historial y bitácora) y **Restaurar**. La restauración valida el archivo, descarta campos desconocidos y fotos que no sean `data:image`, y antes de reemplazar nada descarga una copia de los datos actuales. Se pide almacenamiento persistente (`navigator.storage.persist`). | Navegador: respaldo de 6 equipos con foto → restaurado con 5. Se descartó un `image: "javascript:…"` y se descargó la copia previa. |
+| A1 (mitigación) | La contraseña ya no está en el código: se compara un hash PBKDF2-SHA256 (100.000 iteraciones, `src/utils/auth.js`). El login pide el **nombre del operador** y la bitácora lo registra. | `[contraseña omitida]` no aparece en `dist/`. Contraseña incorrecta rechazada, correcta aceptada. La bitácora muestra "Prueba QA". |
+| M1 | Los guardados se esperan: si fallan, no se muestra éxito, se recargan los últimos datos guardados y el formulario vuelve a abrirse. Fotos a 1024 px y 75 % de calidad. | Código. No reproduje un disco lleno. |
+| M2 | `xlsx` 0.20.3 (CDN oficial de SheetJS), `npm audit fix` y límite de 5 MB al importar. | `npm audit --omit=dev`: 0 vulnerabilidades. |
+| M4 | El clon solo vive en pantalla hasta pulsar OK. Al cargar se descartan borradores antiguos. | Navegador: la tabla muestra 6 filas, IndexedDB guarda 5. Un borrador antiguo desaparece al migrar. |
+| M5 | `xlsx` y `html2canvas` se cargan con `import()` al usarlos. | Bundle principal: de 1,2 MB a 677 KB. `xlsx` solo se descarga al importar. |
+| M6 | Filtros, gráfico y KPIs con `useMemo`. Fotos en una clave por equipo (`img:<id>:<rev>`), esquema v3, cola de escrituras y limpieza de fotos huérfanas (más de 10 min). | Navegador: migración v2→v3 de datos antiguos con foto y préstamo. Las fotos pasan a su clave y el préstamo se conserva. |
+| B1 | Un único mapa de colores por estado para gráfico y etiqueta. | "Inhabilitado" se ve en rojo. |
+| B2 | Eliminada la "Ficha de solo lectura" (`?view=`). | Código. |
+| B3 | El contador de almacenes se calcula. | Muestra 22. |
+| B4 | `lang="es"`, `aria-label` en botones de icono y campos del login, `role="dialog"` y Escape cierra los modales. | Código y navegador (`lang`). |
+| B5 | Iconos PWA cuadrados reales de 192 y 512 px. Fondo del login precacheado. Borradas 3 imágenes sin uso (`favicon.jpg`, `logo.jpg`, `mapa-estatico.jpg`). | `file`: 192×192 y 512×512. |
+| B6 | `ignorePatterns` para `dist` y `src/archive`; avisos corregidos. | `oxlint src`: 0 avisos. |
+| B7 (parcial) | Quitado `@supabase/supabase-js`, que no se usaba. `.playwright-mcp/` en `.gitignore`. | Ver pendientes. |
+| B8 (parcial) | La bitácora global se guarda en ISO 8601 y se formatea al mostrar. | IndexedDB: `2026-11-05T05:12:21.636Z`. |
+| B9 | Cambiar la cantidad sin trasladar pide confirmación y un motivo, que queda en el historial. Un traslado no puede mover más unidades de las que hay. | Código. |
+| B10 | La foto del registro nuevo se añade a la galería del registro con el que se consolida. | Código. |
+| B11 | El CSV de la bitácora usa la misma protección que el del inventario: `;`, BOM y celdas contra fórmulas. | Código. |
+| B12 | El Almacén Base no cambia al trasladar. Su selector ofrece los almacenes de la terminal propietaria. | Código. |
+| Pendiente anterior 2 | Un Activo Fijo tiene cantidad 1 al registrarlo, editarlo e importarlo. Los registros antiguos con más unidades se pueden editar sin cambiar su cantidad. | Navegador: cantidad 2 rechazada, cantidad 1 aceptada. |
+| Pendiente anterior 3 | Plantilla oficial corregida celda a celda, conservando el formato: "Utility Terminal B2" y "Gate 3"; el lote de separadores sin número de activo; los activos fijos con 1 unidad. | Navegador: importa 4 equipos sin ningún aviso. |
+
+Además, los nombres de los archivos descargados usan una fecha limpia (`2026-11-05_14-30-00`).
+
+### Revisión adversarial del código (resto de hallazgos)
+
+2 rondas, cada una con un árbitro nuevo e independiente.
+
+| Ronda | Veredicto | Bloqueantes (fragmento original → fallo → corrección aplicada) |
+|---|---|---|
+| 1 | Rechazado | **B-1 · Contraseña en un comentario:** `src/utils/auth.js` decía `// Nota: las credenciales (gerente/<contraseña>) se mantienen…`. El bundle estaba limpio, pero el código fuente está en GitHub. → Se quitó del comentario. **B-2 · Sesiones abiertas sin operador:** `App.jsx` solo comprobaba `gpc_auth === 'true'`, así que una tablet con la sesión ya iniciada recibía la actualización y seguía firmando la bitácora como "gerente". → Sin `gpc_operator` se vuelve al login. |
+| 2 | **Aprobado** | Ninguno. |
+
+**Menores de la ronda 1 corregidos:**
+- La limpieza de fotos huérfanas medía la antigüedad desde la creación de la foto, así que podía borrar una foto que una pestaña desfasada aún usaba. Ahora cuenta 10 minutos desde que la foto dejó de usarse (`gpc_orphan_photo_marks`).
+- Si la carga inicial fallaba, el siguiente guardado sobrescribía el inventario con una lista vacía. Ahora no se guarda nada y se avisa al usuario.
+- **Restaurar:**
+  - la cantidad mínima es 1;
+  - se avisa de cuántos registros se descartaron;
+  - si el inventario se escribe pero la bitácora no, el mensaje lo dice correctamente;
+  - se limpia la edición en curso.
+- Las descargas de respaldo ya no revocan el archivo antes de tiempo.
+- Al importar, el Almacén Base se valida contra la terminal propietaria, igual que en el editor.
+
+**Menores de la ronda 2 corregidos después de la aprobación** (verificados con lint y build; no los revisó ningún árbitro):
+- El indicador de carga fallida ahora se reinicia cuando la carga sale bien.
+- Las cantidades con decimales de un respaldo se redondean hacia abajo.
+- Si la restauración queda a medias, también se limpia la pantalla.
+- Si la carga falló, la copia previa a restaurar se hace con lo que realmente hay guardado.
+- La contraseña se quitó también de este informe.
+
+**Verificación en el navegador** (sobre el build de producción, con datos de prueba borrados al terminar):
+- login y operador;
+- sesión antigua sin operador → login;
+- plantilla oficial sin avisos;
+- activo fijo con cantidad 2 rechazado;
+- clon solo en pantalla;
+- foto en su propia clave;
+- respaldo y restauración con datos maliciosos y registros inválidos;
+- migración v2→v3 con préstamo y foto;
+- limpieza de fotos con marcas de 10 minutos.
+
+### Pendientes
+
+1. **C1 y A1 de fondo:** necesitan un servidor, por ejemplo Supabase con Auth: datos compartidos entre equipos, usuarios reales y una bitácora que no se pueda editar. Sin servidor, la sesión de `localStorage` se puede saltar.
+2. **Cambiar la contraseña:** la actual es de diccionario. Sigue en el historial de git (`Login.jsx` en commits anteriores), y a partir del hash se adivina en segundos. Hay que generar una sal y un hash nuevos para una contraseña larga.
+3. **B7 (parcial):** `dist/` sigue en el repositorio porque se publica desde ahí, y `Dashboard.jsx` sigue teniendo unas 2.100 líneas sin dividir en componentes.
+4. **B8 (parcial):** el historial de cada equipo y las fechas de las fotos siguen en formato local. Solo la bitácora global está en ISO 8601.
+5. **Menores aceptados:**
+   - carreras de milisegundos entre pestañas;
+   - una pestaña con el bundle antiguo puede tapar una foto nueva hasta que se actualiza;
+   - PBKDF2 en JS puro tarda unos segundos en móviles lentos que abren la app por HTTP;
+   - 6 vulnerabilidades en dependencias de desarrollo (`vite-plugin-pwa` → `workbox-build`), que no llegan a la app publicada;
+   - los modales se cierran con Escape, pero no retienen el foco.
+6. **Préstamos ya perdidos:** los que borró la migración antigua no se pueden recuperar.

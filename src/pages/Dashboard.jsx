@@ -1,19 +1,20 @@
-import html2canvas from 'html2canvas';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { Trash2, Clock, Upload, Copy, Plus, Moon, Sun, Package, Camera, RefreshCw, Activity, Share2, Download } from 'lucide-react';
 import { useInventory } from '../hooks/useInventory';
-import * as XLSX from 'xlsx';
 import KPICards from '../components/KPICards';
 
 const nowString = () => new Date().toLocaleString();
+// Fecha para nombres de archivo: 2026-11-05_14-30-00 (sin caracteres raros del formato local)
+const fileStamp = () => { const d = new Date(); const p = (x) => String(x).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}_${p(d.getHours())}-${p(d.getMinutes())}-${p(d.getSeconds())}`; };
+const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
 
 
 // NOTA: Se ha eliminado "Prestado" porque ahora es una relación estructural (owner !== terminal)
 const STATUS_OPTIONS = ['En uso', 'En Almacén', 'Inhabilitado', 'Decomisado', 'En reparación', 'En proceso de decomiso'];
 const TERMINAL_OPTIONS = ['Terminal A', 'Terminal B', 'Terminal B2'];
 
-export const WAREHOUSES_DATA = {
+const WAREHOUSES_DATA = {
   'Terminal A': [
     { name: 'Almacén Sótano', location: 'Sótano – Terminal A' },
     { name: 'Almacén Aduanas TA', location: 'Aduanas – Terminal A' },
@@ -119,13 +120,60 @@ const withLegacyImage = (item, dateLabel = 'Registro Original') => {
   return images;
 };
 
-// Colores Semánticos GPC Material
-const STATUS_COLORS = { 'En uso': '#21BA45', 'En Almacén': '#3498db', 'Inhabilitado': '#e74c3c', 'Decomisado': '#7f8c8d', 'Por decomisar': '#f1c40f', 'En reparación': '#9b59b6', 'Terminal A': '#1abc9c', 'Terminal B': '#e67e22', 'Terminal B2': '#9b59b6' };
+// Colores Semánticos GPC Material: un único mapa por estado, compartido por el gráfico (chart)
+// y por la etiqueta de la tabla (bg/fg). Los estados sin color propio usan el ámbar por defecto.
+const STATUS_STYLES = {
+  'En uso':                  { chart: '#21BA45', bg: '#E8F5E9', fg: '#2E7D32' },
+  'En Almacén':              { chart: '#3498db', bg: '#FFF8E1', fg: '#F57F17' },
+  'Inhabilitado':            { chart: '#e74c3c', bg: '#FFEBEE', fg: '#C62828' },
+  'Decomisado':              { chart: '#7f8c8d', bg: '#F5F5F5', fg: '#616161' },
+  'En proceso de decomiso':  { chart: '#f1c40f', bg: '#FFF8E1', fg: '#F57F17' },
+  'En reparación':           { chart: '#9b59b6', bg: '#FFF8E1', fg: '#F57F17' },
+};
+const DEFAULT_BADGE = { bg: '#FFF8E1', fg: '#F57F17' };
+const STATUS_COLORS = {
+  ...Object.fromEntries(Object.entries(STATUS_STYLES).map(([k, v]) => [k, v.chart])),
+  'Terminal A': '#1abc9c', 'Terminal B': '#e67e22', 'Terminal B2': '#9b59b6'
+};
+const badgeStyle = (status) => STATUS_STYLES[status] || DEFAULT_BADGE;
+
+// Exporta un CSV para Excel en español: separador ';', BOM para las tildes y celdas protegidas
+// contra inyección de fórmulas (OWASP A03: =, +, -, @, tabulador, retorno de carro).
+const sanitizeCSV = (val) => {
+  if (val === null || val === undefined) return '';
+  let str = String(val).replace(/"/g, '""');
+  if (/^[=+\-@\t\r]/.test(str)) {
+    str = `'${str}`;
+  }
+  return str;
+};
+const downloadCSV = (headers, rows, filename) => {
+  const csvContent = [headers, ...rows].map(r => r.map(c => `"${sanitizeCSV(c)}"`).join(';')).join('\n');
+  const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.setAttribute('href', url);
+  link.setAttribute('download', filename);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+};
+
+// Fecha de la bitácora: se guarda en ISO 8601 y se muestra con el formato local.
+// Los registros antiguos (texto local) se muestran tal cual.
+const formatLogDate = (value) => {
+  if (!value || !/^\d{4}-\d{2}-\d{2}T/.test(value)) return value || '';
+  const d = new Date(value);
+  return isNaN(d) ? value : d.toLocaleString();
+};
+
+const WAREHOUSE_COUNT = Object.values(WAREHOUSES_DATA).flat().length;
 
 const Dashboard = ({ onLogout }) => {
-  const now = nowString();
-  const { inventory, saveInventory: setInventory, isLoading, globalLogs, addGlobalLog } = useInventory();
-  const currentUser = localStorage.getItem('gpc_user') || 'gerente';
+  const { inventory, saveInventory: setInventory, isLoading, globalLogs, addGlobalLog, exportBackup, restoreBackup } = useInventory();
+  // A1: la bitácora registra el nombre del operador (persona), no solo el usuario/rol del login.
+  const currentUser = localStorage.getItem('gpc_operator') || localStorage.getItem('gpc_user') || 'gerente';
   const [isGlobalLogOpen, setIsGlobalLogOpen] = useState(false);
   const [activeWarehouseTab, setActiveWarehouseTab] = useState('Terminal A');
 
@@ -146,14 +194,6 @@ const Dashboard = ({ onLogout }) => {
     return localStorage.getItem('gpc_theme') === 'dark';
   });
 
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const viewId = params.get('view');
-    if (viewId) {
-      const itemToView = inventory.find(i => i.id === viewId);
-      if (itemToView) setShareItemView(itemToView);
-    }
-  }, [inventory]);
 
   useEffect(() => {
     if (isDarkMode) {
@@ -188,11 +228,27 @@ const Dashboard = ({ onLogout }) => {
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'ascending' });
   const [newItemIsFixedAsset, setNewItemIsFixedAsset] = useState(false);
   const [newItemAssetNumber, setNewItemAssetNumber] = useState('');
-  const [filterOwner, setFilterOwner] = useState('Todos');
-  const [shareItemView, setShareItemView] = useState(null);
-  const [isGeneratingCard, setIsGeneratingCard] = useState(false);
+  const [filterOwner] = useState('Todos');
+  const [, setIsGeneratingCard] = useState(false);
   const [shareCardItem, setShareCardItem] = useState(null);
   const shareCardRef = useRef(null);
+  // Clon en edición que aún no se ha guardado: { item, sourceId }. Solo vive en pantalla.
+  const [draftItem, setDraftItem] = useState(null);
+
+  // Escape cierra la ventana abierta que está encima (accesibilidad con teclado).
+  useEffect(() => {
+    if (!(itemToDelete || selectedImage || historyModalItem || isGlobalLogOpen || isAddModalOpen)) return;
+    const onKeyDown = (e) => {
+      if (e.key !== 'Escape') return;
+      if (itemToDelete) { setItemToDelete(null); setDeletePassword(''); }
+      else if (selectedImage) setSelectedImage(null);
+      else if (historyModalItem) setHistoryModalItem(null);
+      else if (isGlobalLogOpen) setIsGlobalLogOpen(false);
+      else if (isAddModalOpen) setIsAddModalOpen(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [itemToDelete, selectedImage, historyModalItem, isGlobalLogOpen, isAddModalOpen]);
 
   const handleShareAsCard = async (item) => {
     setShareCardItem(item);
@@ -202,7 +258,9 @@ const Dashboard = ({ onLogout }) => {
     setTimeout(async () => {
       if (shareCardRef.current) {
         try {
-          const canvas = await html2canvas(shareCardRef.current, { 
+          // Se descarga solo cuando se comparte una tarjeta
+          const { default: html2canvas } = await import('html2canvas');
+          const canvas = await html2canvas(shareCardRef.current, {
             scale: 2, 
             useCORS: true, 
             backgroundColor: isDarkMode ? '#1e1e1e' : '#ffffff' 
@@ -254,8 +312,10 @@ const Dashboard = ({ onLogout }) => {
         img.src = event.target.result;
         img.onload = () => {
           const canvas = document.createElement('canvas');
-          const MAX_WIDTH = 1600; // Incrementado drásticamente para máxima calidad
-          const MAX_HEIGHT = 1600;
+          // 1024 px y 75 % de calidad: nítida en pantalla y unas 3-4 veces más liviana que a 1600 px / 90 %,
+          // para no llenar el almacenamiento del dispositivo.
+          const MAX_WIDTH = 1024;
+          const MAX_HEIGHT = 1024;
           let width = img.width;
           let height = img.height;
 
@@ -274,7 +334,7 @@ const Dashboard = ({ onLogout }) => {
           canvas.height = height;
           const ctx = canvas.getContext('2d');
           ctx.drawImage(img, 0, 0, width, height);
-          resolve(canvas.toDataURL('image/jpeg', 0.90)); // 90% de calidad JPEG
+          resolve(canvas.toDataURL('image/jpeg', 0.75));
         };
         img.onerror = (error) => reject(error);
       };
@@ -297,38 +357,35 @@ const Dashboard = ({ onLogout }) => {
 
   const typeSuggestions = useMemo(() => Array.from(new Set(inventory.map(i => i.name))), [inventory]);
 
+  // Mantiene coherentes almacén y área del formulario de registro con la terminal y el estado.
+  // Solo corrige valores que no son válidos, así que no entra en bucle.
   useEffect(() => {
     const whs = WAREHOUSES_DATA[newItemTerminal] || [];
-    if (whs.length > 0 && !whs.some(w => w.name === newItemWarehouse)) {
-      setNewItemWarehouse(whs[0].name);
-      if (newItemStatus === 'En Almacén') {
-        setNewItemArea(whs[0].name);
-      }
-    }
-  }, [newItemTerminal]);
+    const validWh = whs.some(w => w.name === newItemWarehouse)
+      ? newItemWarehouse
+      : (whs.length > 0 ? whs[0].name : newItemWarehouse);
+    if (validWh !== newItemWarehouse) setNewItemWarehouse(validWh);
 
-  useEffect(() => {
     if (newItemStatus === 'En Almacén') {
-      const whs = WAREHOUSES_DATA[newItemTerminal] || [];
-      const targetWh = (newItemWarehouse && whs.some(w => w.name === newItemWarehouse))
-        ? newItemWarehouse
-        : (whs.length > 0 ? whs[0].name : '');
-      if (targetWh) {
-        setNewItemWarehouse(targetWh);
-        setNewItemArea(targetWh);
-      }
+      if (validWh && newItemArea !== validWh) setNewItemArea(validWh);
     } else {
       const allowedAreas = getOperationalAreas(newItemTerminal);
-      if (!allowedAreas.includes(newItemArea)) {
-        setNewItemArea(allowedAreas[0]);
-      }
+      if (!allowedAreas.includes(newItemArea)) setNewItemArea(allowedAreas[0]);
     }
-  }, [newItemTerminal, newItemStatus]);
+  }, [newItemTerminal, newItemStatus, newItemWarehouse, newItemArea]);
 
   
   const handleExcelImport = (e) => {
     const file = e.target.files[0];
     if (!file) return;
+
+    // Límite de tamaño: un archivo enorme (o malicioso) puede congelar la app al leerlo.
+    // La plantilla oficial con miles de filas pesa muy por debajo de este límite.
+    if (file.size > MAX_IMPORT_BYTES) {
+      alert(`El archivo "${file.name}" es demasiado grande (${(file.size / 1048576).toFixed(1)} MB). El máximo permitido es ${MAX_IMPORT_BYTES / 1048576} MB.`);
+      e.target.value = null;
+      return;
+    }
 
     if (!window.confirm(`¿Estás seguro que deseas cargar el inventario desde el archivo "${file.name}"? Esto agregará los equipos al sistema.`)) {
       e.target.value = null; // reset input
@@ -354,9 +411,11 @@ const Dashboard = ({ onLogout }) => {
       return (b[0] === 0x50 && b[1] === 0x4B) || (b[0] === 0xD0 && b[1] === 0xCF);
     };
     const reader = new FileReader();
-    reader.onload = (evt) => {
+    reader.onload = async (evt) => {
       try {
         const data = evt.target.result;
+        // La librería de Excel se descarga solo cuando se usa (no en cada carga de la app)
+        const XLSX = await import('xlsx');
         const wb = (isCSV && !looksLikeWorkbook(data))
           // raw:true en CSV: cada celda se conserva como texto (no se pierden ceros a la izquierda como "0012")
           ? XLSX.read(decodeCSV(data).replace(/^\uFEFF/, ''), { type: 'string', raw: true })
@@ -450,10 +509,15 @@ const Dashboard = ({ onLogout }) => {
           // Entero positivo; se aceptan separadores de miles ("1,500" / "1.500")
           const qtyText = /^\d{1,3}([.,]\d{3})+$/.test(rawQty) ? rawQty.replace(/[.,]/g, '') : rawQty;
           const qtyParsed = /^\d+$/.test(qtyText) ? parseInt(qtyText, 10) : NaN;
-          const quantity = (!isNaN(qtyParsed) && qtyParsed > 0) ? qtyParsed : 1;
+          let quantity = (!isNaN(qtyParsed) && qtyParsed > 0) ? qtyParsed : 1;
           if (rawQty && quantity !== qtyParsed) warnings.push(`Fila ${rowNum}: cantidad "${rawQty}" no es un entero positivo → 1.`);
 
           const assetNum = normalizeAsset(getVal(parsedRow, ['Activo Fijo', 'Activo', 'Asset', 'Num Activo', '# Activo', 'Nro Activo', 'Codigo Activo']));
+          // Un número de Activo Fijo identifica UNA unidad concreta
+          if (assetNum.length > 0 && quantity > 1) {
+            warnings.push(`Fila ${rowNum}: el Activo Fijo ${assetNum} es una sola unidad; cantidad ${quantity} → 1. Registra las demás unidades con su propio número.`);
+            quantity = 1;
+          }
 
           const rawOwner = getVal(parsedRow, ['Propietario', 'Owner', 'Dueño', 'Dueno']);
           let ownerTerminal = matchTerminal(rawOwner);
@@ -462,13 +526,15 @@ const Dashboard = ({ onLogout }) => {
             if (rawOwner) warnings.push(`Fila ${rowNum}: propietario "${rawOwner}" no reconocido → ${terminal}.`);
           }
 
-          // Almacén Base: debe ser un almacén oficial de la terminal.
-          const defaultWh = termWarehouseNames[0] || '';
+          // Almacén Base: un almacén oficial de la terminal PROPIETARIA (un préstamo conserva el
+          // almacén de origen, igual que en el editor).
+          const ownerWarehouseNames = (WAREHOUSES_DATA[ownerTerminal] || []).map(w => w.name);
+          const defaultWh = ownerWarehouseNames[0] || '';
           const rawBaseWh = getVal(parsedRow, ['Almacen Base', 'Almacén Base', 'Base Warehouse', 'BaseWarehouse', 'Almacen Custodia', 'Almacén Custodia', 'Almacen', 'Almacén']);
-          let baseWarehouse = matchOption(rawBaseWh, termWarehouseNames);
+          let baseWarehouse = matchOption(rawBaseWh, ownerWarehouseNames);
           if (!baseWarehouse) {
-            baseWarehouse = status === 'En Almacén' ? area : defaultWh;
-            if (rawBaseWh) warnings.push(`Fila ${rowNum}: almacén base "${rawBaseWh}" no existe en ${terminal} → ${baseWarehouse}.`);
+            baseWarehouse = (status === 'En Almacén' && ownerWarehouseNames.includes(area)) ? area : defaultWh;
+            if (rawBaseWh) warnings.push(`Fila ${rowNum}: almacén base "${rawBaseWh}" no existe en ${ownerTerminal} → ${baseWarehouse}.`);
           }
 
           // Activo Fijo duplicado: contra el inventario y contra las filas anteriores del mismo archivo
@@ -513,7 +579,7 @@ const Dashboard = ({ onLogout }) => {
           }
         }
 
-        setInventory(prev => [...prev, ...newItems]);
+        if (!(await setInventory(prev => [...prev, ...newItems]))) return;
         let successMsg = `Importación masiva: Se cargaron ${newItems.length} equipos desde Excel/CSV.`;
         if (skippedCount > 0) successMsg += ` (Se omitieron ${skippedCount} filas por Activo Fijo duplicado).`;
         if (warnings.length > 0) successMsg += ` ${warnings.length} avisos de corrección.`;
@@ -554,7 +620,7 @@ const Dashboard = ({ onLogout }) => {
       updatedItem.history = [...(updatedItem.history || []), historyLog];
       
       // Aplicar el cambio sobre la versión ACTUAL del equipo (puede haber cambiado en otra pestaña)
-      setInventory(prev => prev.map(i => {
+      const saved = await setInventory(prev => prev.map(i => {
         if (i.id !== updatedItem.id) return i;
         const images = i.images
           ? i.images.map(img => img.data === oldPhotoData ? { ...img, data: compressedBase64, date: now } : img)
@@ -562,6 +628,7 @@ const Dashboard = ({ onLogout }) => {
         const image = (!i.images || i.image === oldPhotoData) ? compressedBase64 : i.image;
         return { ...i, images, image, history: [...(i.history || []), historyLog] };
       }));
+      if (!saved) return;
       setSelectedImage(updatedItem);
       addGlobalLog(currentUser, `Foto reemplazada para el equipo: ${updatedItem.name}.`);
     } catch (err) {
@@ -570,29 +637,28 @@ const Dashboard = ({ onLogout }) => {
     }
   };
 
-  const handleDeletePhoto = (photoData) => {
+  const handleDeletePhoto = async (photoData) => {
     if (!window.confirm("¿Seguro que deseas eliminar esta foto?")) return;
     const now = nowString();
     let updatedItem = { ...selectedImage };
     let historyLog = `[${now}] Foto eliminada desde la galería.`;
 
-    if (updatedItem.images && updatedItem.images.length > 1) {
+    const keepsPhotos = updatedItem.images && updatedItem.images.length > 1;
+    if (keepsPhotos) {
       updatedItem.images = updatedItem.images.filter(img => img.data !== photoData);
       // Si la miniatura principal era la foto borrada, pasa a ser la más reciente que queda
       if (!updatedItem.images.some(img => img.data === updatedItem.image)) {
         updatedItem.image = updatedItem.images[updatedItem.images.length - 1].data;
       }
-      setActivePhotoIdx(0);
     } else {
       updatedItem.image = null;
       delete updatedItem.images;
-      setSelectedImage(null);
     }
-    
+
     updatedItem.history = [...(updatedItem.history || []), historyLog];
-    
+
     // Aplicar el borrado sobre la versión ACTUAL del equipo (puede haber cambiado en otra pestaña)
-    setInventory(prev => prev.map(i => {
+    const saved = await setInventory(prev => prev.map(i => {
       if (i.id !== updatedItem.id) return i;
       const remaining = (i.images || []).filter(img => img.data !== photoData);
       if (remaining.length === 0) {
@@ -603,13 +669,17 @@ const Dashboard = ({ onLogout }) => {
       const image = remaining.some(img => img.data === i.image) ? i.image : remaining[remaining.length - 1].data;
       return { ...i, images: remaining, image, history: [...(i.history || []), historyLog] };
     }));
-    if (updatedItem.image || updatedItem.images) {
-       setSelectedImage(updatedItem);
+    if (!saved) return;
+    if (keepsPhotos) {
+      setActivePhotoIdx(0);
+      setSelectedImage(updatedItem);
+    } else {
+      setSelectedImage(null);
     }
     addGlobalLog(currentUser, `Foto eliminada para el equipo: ${updatedItem.name}.`);
   };
 
-  const handleAddItem = (e) => {
+  const handleAddItem = async (e) => {
     if (e && e.preventDefault) e.preventDefault();
     try {
       const now = nowString();
@@ -623,6 +693,10 @@ const Dashboard = ({ onLogout }) => {
     if (newItemIsFixedAsset) {
       if (!newAssetNumber) {
         alert("Indica el número de Activo Fijo o desmarca la casilla \"¿Activo Fijo?\".");
+        return;
+      }
+      if (qty !== 1) {
+        alert("Un Activo Fijo es una sola unidad: la cantidad debe ser 1. Registra cada unidad con su propio número de activo.");
         return;
       }
       const duplicate = inventory.find(i => i.isFixedAsset && normalizeAsset(i.assetNumber) === newAssetNumber);
@@ -653,22 +727,28 @@ const Dashboard = ({ onLogout }) => {
       history: [`[${now}] Equipo Registrado. Estado Inicial: ${newItemStatus}. Ubicación: ${finalNewArea}. Almacén Base: ${assignedWarehouse}. Cantidad: ${qty}.`]
     };
 
-    // Consolidation check for new item if not fixed asset
-    const existingIndex = inventory.findIndex(i => canConsolidate(i, newItem));
-
-    if (existingIndex !== -1) {
-      const consolidatedInventory = [...inventory];
+    // Consolidation check for new item if not fixed asset (sobre la versión actual del inventario)
+    const saved = await setInventory(prev => {
+      const existingIndex = prev.findIndex(i => canConsolidate(i, newItem));
+      if (existingIndex === -1) return [...prev, newItem];
+      const consolidatedInventory = [...prev];
       const target = consolidatedInventory[existingIndex];
-      consolidatedInventory[existingIndex] = {
+      const merged = {
         ...target,
         baseWarehouse: target.baseWarehouse || assignedWarehouse,
         quantity: target.quantity + qty,
-        history: [...(target.history || []), `[${now}] Consolidación automática: +${qty} unidad(es) agregadas a este registro. Total: ${target.quantity + qty}.`]
+        history: [...(target.history || []), `[${now}] Consolidación automática: +${qty} unidad(es) agregadas a este registro. Total: ${target.quantity + qty}.${newItemImage ? ' [Nueva Foto Adjunta]' : ''}`]
       };
-      setInventory(consolidatedInventory);
-    } else {
-      setInventory([...inventory, newItem]);
-    }
+      // La foto del registro nuevo se añade a la galería del registro existente (antes se perdía)
+      if (newItemImage) {
+        merged.images = [...withLegacyImage(target), ...newItem.images];
+        if (!merged.image) merged.image = newItemImage;
+      }
+      consolidatedInventory[existingIndex] = merged;
+      return consolidatedInventory;
+    });
+    // Si no se pudo guardar, el formulario queda abierto con los datos para reintentar
+    if (!saved) return;
     addGlobalLog(currentUser, `Creado equipo nuevo: ${newItem.name} (Cant: ${newItem.quantity}, Terminal: ${newItem.terminal})`);
     
     // Reset search filters so the newly added item is not hidden by active table filters
@@ -702,42 +782,30 @@ const Dashboard = ({ onLogout }) => {
 
   // Abre la fila en modo edición (sin tocar el inventario)
   const openEditor = (item) => {
-    const whs = WAREHOUSES_DATA[item.terminal] || [];
-    const defaultWh = whs.length > 0 ? whs[0].name : '';
-    const resolvedBaseWh = item.baseWarehouse || (ALL_WAREHOUSE_NAMES.includes(item.area) ? item.area : defaultWh);
+    // Almacén Base = almacén de origen del equipo (de su terminal propietaria). Si falta en
+    // registros antiguos, se deduce del área solo si es un almacén de la terminal propietaria.
+    const ownerWhs = (WAREHOUSES_DATA[ownerOf(item)] || []).map(w => w.name);
+    const resolvedBaseWh = item.baseWarehouse || (ownerWhs.includes(item.area) ? item.area : (ownerWhs[0] || ''));
 
     setEditingId(item.id);
     setEditFormData({ ...item, baseWarehouse: resolvedBaseWh });
     setEditNewImage(null);
   };
 
-  // Id del borrador (clon sin guardar) que hay que descartar al cambiar de fila, o null
-  const draftToDiscard = (nextId) => {
-    if (!editingId || editingId === nextId) return null;
-    const prevEditingItem = inventory.find(i => i.id === editingId);
-    return prevEditingItem && prevEditingItem.isDraft ? editingId : null;
-  };
-
   const handleEditClick = (item) => {
-    // Si estábamos editando otro item que era un borrador sin guardar (clon), lo eliminamos
-    const discardId = draftToDiscard(item.id);
-    if (discardId !== null) {
-      setInventory(prev => prev.filter(i => i.id !== discardId));
-    }
+    // Si estábamos editando un borrador sin guardar (clon) y se pasa a otra fila, se descarta.
+    // El borrador solo existe en pantalla: nunca se escribe en el inventario guardado.
+    if (draftItem && String(draftItem.item.id) !== String(item.id)) setDraftItem(null);
     openEditor(item);
   };
 
   const handleCancelEdit = () => {
-    const currentItem = inventory.find(i => i.id === editingId);
-    if (currentItem && currentItem.isDraft) {
-      const discardId = editingId;
-      setInventory(prev => prev.filter(i => i.id !== discardId));
-    }
+    if (draftItem && String(draftItem.item.id) === String(editingId)) setDraftItem(null);
     setEditingId(null);
     setEditNewImage(null);
   };
-  
-  const handleSaveEdit = (id) => {
+
+  const handleSaveEdit = async (id) => {
     const now = nowString();
     const parsedQty = parseInt(editFormData.quantity, 10);
     if (isNaN(parsedQty) || parsedQty < 1 || !editFormData.name?.trim()) {
@@ -758,15 +826,23 @@ const Dashboard = ({ onLogout }) => {
       }
     }
 
-    const original = inventory.find(i => String(i.id) === String(id));
+    const draft = draftItem && String(draftItem.item.id) === String(id) ? draftItem : null;
+    const original = draft ? draft.item : inventory.find(i => String(i.id) === String(id));
     if (!original) {
       setEditingId(null);
       return;
     }
 
-    const whs = WAREHOUSES_DATA[editFormData.terminal] || [];
-    const defaultWh = whs.length > 0 ? whs[0].name : '';
-    const resolvedBaseWarehouse = editFormData.baseWarehouse || original.baseWarehouse || (ALL_WAREHOUSE_NAMES.includes(original.area) ? original.area : defaultWh);
+    // Un Activo Fijo es una sola unidad. Los registros antiguos con más unidades se pueden
+    // seguir editando sin cambiar su cantidad, pero no se puede crear ni ampliar uno así.
+    if (editFormData.isFixedAsset && parsedQty > 1 &&
+        (draft || !original.isFixedAsset || parsedQty !== original.quantity)) {
+      alert("Un Activo Fijo es una sola unidad: la cantidad debe ser 1. Registra cada unidad con su propio número de activo.");
+      return;
+    }
+
+    const ownerWhs = (WAREHOUSES_DATA[ownerOf(original)] || []).map(w => w.name);
+    let resolvedBaseWarehouse = editFormData.baseWarehouse || original.baseWarehouse || (ownerWhs.includes(original.area) ? original.area : (ownerWhs[0] || ''));
     const finalArea = editFormData.status === 'En Almacén'
       ? (ALL_WAREHOUSE_NAMES.includes(editFormData.area) ? editFormData.area : resolvedBaseWarehouse)
       : editFormData.area;
@@ -791,6 +867,28 @@ const Dashboard = ({ onLogout }) => {
       return;
     }
 
+    // Al trasladar, se mueven unidades existentes: no se puede mover más de las que hay.
+    if (!original.isDraft && hasDestinationChanged && parsedQty > original.quantity) {
+      alert(`No puedes trasladar ${parsedQty} unidades: este registro solo tiene ${original.quantity}.\nSi necesitas corregir la cantidad, hazlo primero sin cambiar la ubicación ni el estado.`);
+      return;
+    }
+
+    // Ajuste de inventario: cambiar la cantidad sin moverla suma o da de baja unidades.
+    // Se pide confirmación y un motivo, que queda en el historial.
+    let adjustReason = '';
+    if (!original.isDraft && !hasDestinationChanged && qtyDelta !== 0) {
+      const diff = parsedQty > original.quantity
+        ? `subir de ${original.quantity} a ${parsedQty} unidades (+${-qtyDelta})`
+        : `bajar de ${original.quantity} a ${parsedQty} unidades (${qtyDelta} se darán de baja)`;
+      const answer = window.prompt(`Vas a ${diff} sin cambiar la ubicación ni el estado.\n\nSi querías trasladar parte del lote, cancela y cambia también la ubicación o el estado.\n\nPara confirmar el ajuste, escribe el motivo:`);
+      if (answer === null) return;
+      adjustReason = answer.trim();
+      if (!adjustReason) {
+        alert('El ajuste de cantidad necesita un motivo. No se guardó ningún cambio.');
+        return;
+      }
+    }
+
     let historyLog = `[${now}] Editado. `;
     if (original.status !== editFormData.status) historyLog += `Estado cambió de "${original.status}" a "${editFormData.status}". `;
     if (original.area !== finalArea) historyLog += `Ubicación cambió de "${original.area}" a "${finalArea}". `;
@@ -803,14 +901,32 @@ const Dashboard = ({ onLogout }) => {
        if (!isSplit && original.history && original.history.length === 1 && ownerOf(original) === original.terminal) {
          newOwner = editFormData.terminal;
          historyLog += `Corrección de registro: Transferido permanentemente a ${editFormData.terminal}. `;
+         // Corrección de registro: el equipo siempre fue de la otra terminal, así que su
+         // almacén base también debe ser de esa terminal.
+         const newOwnerWhs = (WAREHOUSES_DATA[newOwner] || []).map(w => w.name);
+         if (!newOwnerWhs.includes(resolvedBaseWarehouse)) {
+           resolvedBaseWarehouse = newOwnerWhs.includes(finalArea) ? finalArea : (newOwnerWhs[0] || '');
+           historyLog += `Almacén Base corregido a "${resolvedBaseWarehouse}". `;
+         }
        } else {
          historyLog += `Trasladado físicamente a ${editFormData.terminal} (Mantiene propiedad original de ${newOwner}). `;
        }
     }
 
+    // Si el guardado falla, se vuelve a abrir el editor con lo que se había escrito.
+    const formSnapshot = editFormData;
+    const imageSnapshot = editNewImage;
+    const reopenEditor = () => {
+      if (draft) setDraftItem(draft);
+      setEditingId(id);
+      setEditFormData(formSnapshot);
+      setEditNewImage(imageSnapshot);
+    };
+
     // Cierre inmediato del modo edición y limpieza de filtros activos para que se vean ambas filas
     setEditingId(null);
     setEditNewImage(null);
+    if (draft) setDraftItem(null);
     setTextFilterEquipo('');
     setTextFilterArea('');
     setTextFilterEstado('');
@@ -854,11 +970,13 @@ const Dashboard = ({ onLogout }) => {
       
       delete childSpawn.isDraft;
 
-      // Consolidation check for childSpawn
-      const existingMatch = inventory.find(i => String(i.id) !== String(id) && canConsolidate(i, childSpawn));
-
-      if (existingMatch) {
-        const consolidated = inventory.map(i => {
+      // Consolidation check for childSpawn (sobre la versión actual del inventario)
+      const saved = await setInventory(prev => {
+        const existingMatch = prev.find(i => String(i.id) !== String(id) && canConsolidate(i, childSpawn));
+        if (!existingMatch) {
+          return prev.map(i => String(i.id) === String(id) ? parentRemain : i).concat(childSpawn);
+        }
+        return prev.map(i => {
           if (String(i.id) === String(id)) return parentRemain;
           if (String(i.id) === String(existingMatch.id)) {
             let mergedImages = withLegacyImage(i);
@@ -879,10 +997,8 @@ const Dashboard = ({ onLogout }) => {
           }
           return i;
         });
-        setInventory(consolidated);
-      } else {
-        setInventory(inventory.map(i => String(i.id) === String(id) ? parentRemain : i).concat(childSpawn));
-      }
+      });
+      if (!saved) { reopenEditor(); return; }
 
       addGlobalLog(currentUser, `Fraccionamiento de equipo: ${original.name}. ${parsedQty} uds a ${finalArea} (${editFormData.status}), restan ${qtyDelta} uds en ${original.area} (${original.status}).`);
 
@@ -891,7 +1007,10 @@ const Dashboard = ({ onLogout }) => {
       }, 50);
     } else {
       if (qtyDelta !== 0 && !original.isDraft) {
-        historyLog += `Cantidad modificada de ${original.quantity} a ${parsedQty}. `;
+        historyLog += `Ajuste de cantidad de ${original.quantity} a ${parsedQty}. Motivo: ${adjustReason}. `;
+      }
+      if (!original.isDraft && (original.baseWarehouse || '') !== resolvedBaseWarehouse && !historyLog.includes('Almacén Base corregido')) {
+        historyLog += `Almacén Base cambió de "${original.baseWarehouse || '—'}" a "${resolvedBaseWarehouse}". `;
       }
       
       let imagesArray = withLegacyImage(original);
@@ -917,12 +1036,15 @@ const Dashboard = ({ onLogout }) => {
       
       delete updated.isDraft;
 
-      // Consolidation check for updated item
-      const existingMatch = inventory.find(i => String(i.id) !== String(id) && canConsolidate(i, updated));
-
-      if (existingMatch) {
+      // Consolidation check for updated item (sobre la versión actual del inventario).
+      // Un borrador (clon) todavía no está en el inventario: al guardarlo se añade.
+      const saved = await setInventory(prev => {
+        const existingMatch = prev.find(i => String(i.id) !== String(id) && canConsolidate(i, updated));
+        if (!existingMatch) {
+          return draft ? [...prev, updated] : prev.map(i => String(i.id) === String(id) ? updated : i);
+        }
         // Merge updated into existingMatch and remove row id
-        const consolidated = inventory
+        return prev
           .filter(i => String(i.id) !== String(id))
           .map(i => {
             if (String(i.id) === String(existingMatch.id)) {
@@ -944,10 +1066,8 @@ const Dashboard = ({ onLogout }) => {
             }
             return i;
           });
-        setInventory(consolidated);
-      } else {
-        setInventory(inventory.map(i => String(i.id) === String(id) ? updated : i));
-      }
+      });
+      if (!saved) { reopenEditor(); return; }
 
       addGlobalLog(currentUser, `Editado equipo: ${updated.name}. ${historyLog}`);
 
@@ -957,7 +1077,7 @@ const Dashboard = ({ onLogout }) => {
     }
   };
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (!itemToDelete) return;
     if (deletePassword.trim() === 'CONFIRMO') {
       const deletedName = itemToDelete.name;
@@ -968,9 +1088,14 @@ const Dashboard = ({ onLogout }) => {
       setDeletePassword('');
       setEditingId(null);
 
+      // Un borrador (clon sin guardar) no está en el inventario: basta con descartarlo
+      if (draftItem && String(draftItem.item.id) === String(targetId)) {
+        setDraftItem(null);
+        return;
+      }
+
       // Eliminación robusta comparando IDs como String
-      const updatedInventory = inventory.filter(i => String(i.id) !== String(targetId));
-      setInventory(updatedInventory);
+      if (!(await setInventory(prev => prev.filter(i => String(i.id) !== String(targetId))))) return;
       addGlobalLog(currentUser, `Eliminado permanentemente el equipo: ${deletedName}.`);
       
       setTimeout(() => {
@@ -986,40 +1111,58 @@ const Dashboard = ({ onLogout }) => {
       alert("No hay datos para exportar.");
       return;
     }
-    // OWASP A03 / Mitigación de CSV Formula Injection (=, +, -, @, \t, \r)
-    const sanitizeCSV = (val) => {
-      if (val === null || val === undefined) return '';
-      let str = String(val).replace(/"/g, '""');
-      if (/^[=+\-@\t\r]/.test(str)) {
-        str = `'${str}`;
-      }
-      return str;
-    };
-
-        const headers = ["Nombre", "Terminal", "Area", "Almacen Base", "Estado", "Cantidad", "Activo Fijo", "Propietario"];
+    const headers = ["Nombre", "Terminal", "Area", "Almacen Base", "Estado", "Cantidad", "Activo Fijo", "Propietario"];
     const rows = filteredInventory.map(item => [
-      `"${sanitizeCSV(item.name)}"`,
-      `"${sanitizeCSV(item.terminal)}"`,
-      `"${sanitizeCSV(item.area)}"`,
-      `"${sanitizeCSV(item.baseWarehouse || (ALL_WAREHOUSE_NAMES.includes(item.area) ? item.area : ''))}"`,
-      `"${sanitizeCSV(item.status)}"`,
+      item.name,
+      item.terminal,
+      item.area,
+      item.baseWarehouse || (ALL_WAREHOUSE_NAMES.includes(item.area) ? item.area : ''),
+      item.status,
       item.quantity || 1,
-      `"${sanitizeCSV(item.isFixedAsset && item.assetNumber ? item.assetNumber : '')}"`,
-      `"${sanitizeCSV(item.ownerTerminal || item.terminal || '')}"`
+      item.isFixedAsset && item.assetNumber ? item.assetNumber : '',
+      item.ownerTerminal || item.terminal || ''
     ]);
-    
-    // Usamos punto y coma (;) porque Excel en español no reconoce la coma por defecto
-    const csvContent = [headers.join(";"), ...rows.map(r => r.join(";"))].join("\n");
-    
-    // Añadimos el BOM (\uFEFF) para que Excel reconozca los acentos (UTF-8)
-    const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
+    downloadCSV(headers, rows, `Inventario_GPC_${fileStamp()}.csv`);
+  };
+
+  // Respaldo completo (inventario + fotos + historial + bitácora global) en un solo JSON descargable.
+  const handleBackupDownload = async () => {
+    const backup = await exportBackup();
+    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.setAttribute("href", url);
-    link.setAttribute("download", `Inventario_GPC_${nowString().replace(/[/ :,]/g, '_')}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `respaldo_inventario_gpc_${fileStamp()}.json`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    addGlobalLog(currentUser, 'Descargó un respaldo completo del inventario.');
+  };
+
+  // Restaurar reemplaza TODOS los datos actuales por los del archivo. Antes de hacerlo,
+  // useInventory descarga automáticamente un respaldo de lo que había, por seguridad.
+  const handleRestoreFile = async (e) => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    if (!window.confirm('⚠️ Esto reemplazará TODO el inventario y la bitácora actuales con los del archivo seleccionado.\n\nSe descargará automáticamente un respaldo de los datos actuales antes de restaurar, por seguridad.\n\n¿Deseas continuar?')) return;
+
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      const result = await restoreBackup(parsed);
+      if (result) {
+        // Lo que estaba en edición o clonado pertenece a los datos anteriores
+        setDraftItem(null);
+        setEditingId(null);
+        setEditNewImage(null);
+        const extra = result.discarded > 0 ? ` Se descartaron ${result.discarded} registros inválidos (sin id o sin nombre).` : '';
+        addGlobalLog(currentUser, `Restauró el inventario desde un archivo de respaldo (${file.name}).${extra}`);
+        if (!result.logsFailed) alert(`✅ Inventario restaurado correctamente.${extra}`);
+      }
+    } catch (err) {
+      console.error('Error restaurando respaldo', err);
+      alert(`⚠️ No se pudo restaurar el archivo: ${err.message || 'formato inválido.'}`);
+    }
   };
 
   const handleCloneItem = (item) => {
@@ -1034,10 +1177,10 @@ const Dashboard = ({ onLogout }) => {
     if (item.isFixedAsset) {
       cloned.history.push(`[${now}] Número de Activo Fijo limpiado automáticamente para evitar duplicidad.`);
     }
-    // Una sola escritura: descartar el borrador anterior (si lo hay) y añadir el clon.
-    // Antes eran dos escrituras sobre el mismo inventario viejo y el clon nuevo se perdía.
-    const discardId = draftToDiscard(cloned.id);
-    setInventory(prev => [...prev.filter(i => i.id !== discardId), cloned]);
+    // El clon solo existe en pantalla (debajo de su fila de origen) hasta que se pulsa OK:
+    // no se escribe en el inventario guardado ni lo ven otras pestañas. Reemplaza al borrador anterior.
+    const sourceId = draftItem && String(draftItem.item.id) === String(item.id) ? draftItem.sourceId : item.id;
+    setDraftItem({ item: cloned, sourceId });
     openEditor(cloned);
   };
 
@@ -1046,14 +1189,18 @@ const Dashboard = ({ onLogout }) => {
     setEditFormData(prev => {
       let updated = { ...prev, [field]: val };
 
+      // Almacén Base es el almacén donde se registró el equipo: trasladarlo (de terminal, de área
+      // o de estado) NO lo cambia. Solo se cambia a mano en su selector.
+      // Almacén de destino al guardar en un almacén: el base si está en esta terminal; si no, el primero.
+      const warehouseIn = (term) => {
+        const whs = WAREHOUSES_DATA[term] || [];
+        if (updated.baseWarehouse && whs.some(w => w.name === updated.baseWarehouse)) return updated.baseWarehouse;
+        return whs.length > 0 ? whs[0].name : '';
+      };
+
       if (field === 'terminal') {
-        const whs = WAREHOUSES_DATA[val] || [];
-        const defaultWh = whs.length > 0 ? whs[0].name : '';
-        if (!updated.baseWarehouse || !whs.some(w => w.name === updated.baseWarehouse)) {
-          updated.baseWarehouse = defaultWh;
-        }
         if (updated.status === 'En Almacén') {
-          updated.area = updated.baseWarehouse;
+          updated.area = warehouseIn(val);
         } else {
           const opAreas = getOperationalAreas(val);
           updated.area = opAreas[0];
@@ -1064,25 +1211,16 @@ const Dashboard = ({ onLogout }) => {
         // Si selecciona un Almacén en la columna Área/Ubicación, pasa automáticamente a estado 'En Almacén'
         if (ALL_WAREHOUSE_NAMES.includes(val)) {
           updated.status = 'En Almacén';
-          updated.baseWarehouse = val;
         } else if (prev.status === 'En Almacén') {
           // Si estaba en Almacén y selecciona un Área Operativa, pasa automáticamente a 'En uso'
-          updated.baseWarehouse = prev.baseWarehouse || (ALL_WAREHOUSE_NAMES.includes(prev.area) ? prev.area : '');
           updated.status = 'En uso';
         }
       }
 
       if (field === 'status') {
         if (val === 'En Almacén') {
-          const whs = WAREHOUSES_DATA[updated.terminal] || [];
-          const defaultWh = whs.length > 0 ? whs[0].name : '';
-          const targetWh = (updated.baseWarehouse && whs.some(w => w.name === updated.baseWarehouse))
-            ? updated.baseWarehouse
-            : defaultWh;
-          updated.area = targetWh;
-          updated.baseWarehouse = targetWh;
+          updated.area = warehouseIn(updated.terminal);
         } else if (prev.status === 'En Almacén' || ALL_WAREHOUSE_NAMES.includes(updated.area)) {
-          updated.baseWarehouse = prev.baseWarehouse || (ALL_WAREHOUSE_NAMES.includes(prev.area) ? prev.area : '');
           const opAreas = getOperationalAreas(updated.terminal);
           updated.area = opAreas[0];
         }
@@ -1095,8 +1233,9 @@ const Dashboard = ({ onLogout }) => {
     return getAreasForTerminal(terminal, status);
   };
 
-  // Filtrado de inventario para la vista principal
-  const chartInventory = inventory.filter(item => {
+  // Filtrado de inventario para la vista principal.
+  // Memorizado: solo se recalcula cuando cambian el inventario o los filtros, no en cada tecla del editor.
+  const chartInventory = useMemo(() => inventory.filter(item => {
     let matchTerminal = filterTerminal === 'Todas' ? true : item.terminal === filterTerminal;
     if (filterIsProperty && filterTerminal !== 'Todas') {
        matchTerminal = item.ownerTerminal === filterTerminal && item.terminal !== filterTerminal;
@@ -1104,9 +1243,9 @@ const Dashboard = ({ onLogout }) => {
     const matchStatus = filterStatus === 'Todos' ? true : item.status === filterStatus;
     const matchType = filterType === 'Todos' ? true : item.name === filterType;
     return matchTerminal && matchStatus && matchType;
-  });
+  }), [inventory, filterTerminal, filterIsProperty, filterStatus, filterType]);
 
-  const filteredInventory = inventory.filter(item => {
+  const filteredInventory = useMemo(() => inventory.filter(item => {
     let matchTerminal = filterTerminal === 'Todas' ? true : item.terminal === filterTerminal;
     if (filterIsProperty && filterTerminal !== 'Todas') {
        matchTerminal = item.ownerTerminal === filterTerminal && item.terminal !== filterTerminal;
@@ -1121,7 +1260,7 @@ const Dashboard = ({ onLogout }) => {
 
     let matchOwner = filterOwner === 'Todos' ? true : item.ownerTerminal === filterOwner;
     return matchTerminal && matchStatus && matchType && matchTextEquipo && matchTextArea && matchTextEstado && matchOwner && matchTextActivo;
-  });
+  }), [inventory, filterTerminal, filterIsProperty, filterStatus, filterType, textFilterEquipo, textFilterArea, textFilterEstado, textFilterActivo, filterOwner]);
 
   const sortedInventory = React.useMemo(() => {
     let sortableItems = [...filteredInventory];
@@ -1139,6 +1278,14 @@ const Dashboard = ({ onLogout }) => {
     return sortableItems;
   }, [filteredInventory, sortConfig]);
 
+  // Filas de la tabla: el clon en edición (si lo hay) aparece justo debajo de su fila de origen
+  const tableRows = useMemo(() => {
+    if (!draftItem) return sortedInventory;
+    const idx = sortedInventory.findIndex(i => String(i.id) === String(draftItem.sourceId));
+    if (idx === -1) return [...sortedInventory, draftItem.item];
+    return [...sortedInventory.slice(0, idx + 1), draftItem.item, ...sortedInventory.slice(idx + 1)];
+  }, [sortedInventory, draftItem]);
+
   const requestSort = (key) => {
     let direction = 'ascending';
     if (sortConfig.key === key && sortConfig.direction === 'ascending') {
@@ -1147,34 +1294,37 @@ const Dashboard = ({ onLogout }) => {
     setSortConfig({ key, direction });
   };
 
-  const getChartData = () => {
+  const chartData = useMemo(() => {
     let dataMap = {};
     if (filterTerminal === 'Todas') {
       chartInventory.forEach(item => { dataMap[item.terminal] = (dataMap[item.terminal] || 0) + item.quantity; });
     } else {
-      chartInventory.forEach(item => { 
-        dataMap[item.status] = (dataMap[item.status] || 0) + item.quantity; 
+      chartInventory.forEach(item => {
+        dataMap[item.status] = (dataMap[item.status] || 0) + item.quantity;
       });
     }
     return Object.keys(dataMap).map(key => ({ name: key, value: dataMap[key] }));
-  };
-
-  const chartData = getChartData();
+  }, [chartInventory, filterTerminal]);
 
   // KPIs
   // Excluimos "Decomisado" del cálculo total real para no inflar métricas con basura
-  const totalItems = filteredInventory.filter(i => i.status !== 'Decomisado').reduce((acc, curr) => acc + curr.quantity, 0);
-  const tableTotalItems = filteredInventory.reduce((acc, curr) => acc + curr.quantity, 0);
-  const operativosItems = filteredInventory.filter(i => i.status.startsWith('En uso')).reduce((acc, curr) => acc + curr.quantity, 0);
-  const danadosItems = filteredInventory.filter(i => i.status.startsWith('Inhabilitado')).reduce((acc, curr) => acc + curr.quantity, 0);
-  
+  const { totalItems, tableTotalItems, operativosItems, danadosItems } = useMemo(() => {
+    const sum = (list) => list.reduce((acc, curr) => acc + curr.quantity, 0);
+    return {
+      totalItems: sum(filteredInventory.filter(i => i.status !== 'Decomisado')),
+      tableTotalItems: sum(filteredInventory),
+      operativosItems: sum(filteredInventory.filter(i => i.status.startsWith('En uso'))),
+      danadosItems: sum(filteredInventory.filter(i => i.status.startsWith('Inhabilitado'))),
+    };
+  }, [filteredInventory]);
+
   // KPI de Préstamos: ¿Cuántos equipos PROPIEDAD de la terminal actual (filtro) están ubicados físicamente en otra terminal?
   // Esto analiza todo el inventario base, no el inventario filtrado, para detectar equipos que salieron de su frontera.
-  const prestadosItems = inventory.filter(i => {
+  const prestadosItems = useMemo(() => inventory.filter(i => {
     const isOwnedByFilter = filterTerminal === 'Todas' ? true : ownerOf(i) === filterTerminal;
     const isLoanedOut = ownerOf(i) !== i.terminal; // Si la terminal actual es diferente al dueño, está prestado.
     return isOwnedByFilter && isLoanedOut;
-  }).reduce((acc, curr) => acc + curr.quantity, 0);
+  }).reduce((acc, curr) => acc + curr.quantity, 0), [inventory, filterTerminal]);
 
   return (
     <div style={{ padding: '80px 20px 60px 20px', maxWidth: '1400px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '20px' }} className="dashboard-container">
@@ -1187,7 +1337,7 @@ const Dashboard = ({ onLogout }) => {
           </div>
           <div className="top-nav-group-actions" style={{ display: 'flex', gap: '15px', alignItems: 'center', flexWrap: 'wrap' }}>
             
-            <button onClick={() => setIsDarkMode(!isDarkMode)} className="dark-mode-btn" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--q-dark)', display: 'flex', alignItems: 'center' }} title="Alternar Modo Oscuro">
+            <button onClick={() => setIsDarkMode(!isDarkMode)} className="dark-mode-btn" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--q-dark)', display: 'flex', alignItems: 'center' }} title="Alternar Modo Oscuro" aria-label="Alternar modo oscuro">
               {isDarkMode ? <Sun size={24} /> : <Moon size={24} />}
             </button>
 
@@ -1273,7 +1423,7 @@ const Dashboard = ({ onLogout }) => {
               Almacenes
             </h3>
             <span style={{ fontSize: '11px', background: 'var(--q-accent)', color: 'white', padding: '3px 10px', borderRadius: '12px', fontWeight: 'bold' }}>
-              22 Almacenes Activos
+              {WAREHOUSE_COUNT} Almacenes Activos
             </span>
           </div>
 
@@ -1405,6 +1555,13 @@ const Dashboard = ({ onLogout }) => {
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
                 Exportar CSV
               </button>
+              <button onClick={handleBackupDownload} className="btn-secondary" title="Descargar un respaldo completo (inventario, fotos e historial)" style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <Download size={16} /> Respaldo
+              </button>
+              <label className="btn-secondary" title="Restaurar desde un archivo de respaldo (reemplaza todos los datos actuales)" style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}>
+                <Upload size={16} /> Restaurar
+                <input type="file" accept=".json" style={{ display: 'none' }} onChange={handleRestoreFile} />
+              </label>
             </div>
           </div>
 
@@ -1439,7 +1596,7 @@ const Dashboard = ({ onLogout }) => {
                 </tr>
               </thead>
               <tbody>
-                {sortedInventory.map(item => (
+                {tableRows.map(item => (
                   <tr key={item.id} style={{ borderBottom: '1px solid #eee' }}>
                     {editingId === item.id ? (
                       <>
@@ -1447,12 +1604,12 @@ const Dashboard = ({ onLogout }) => {
                           <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
                             <label style={{ cursor: 'pointer', padding: '4px 8px', background: 'var(--q-secondary)', borderRadius: '4px', fontSize: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Adjuntar nueva foto para este estado">
                               <Camera size={16} color="var(--text-muted)" />
-                              <input type="file" accept="image/*" style={{ display: 'none' }} onChange={async (e) => {
+                              <input type="file" accept="image/*" aria-label="Adjuntar nueva foto" style={{ display: 'none' }} onChange={async (e) => {
                                  const f = e.target.files[0];
                                  if (f) {
                                    try {
                                      setEditNewImage(await compressImage(f));
-                                   } catch(err){ console.error(err); alert("Error"); }
+                                   } catch (err) { console.error(err); alert("Error al procesar la foto."); }
                                  }
                               }} />
                             </label>
@@ -1476,7 +1633,7 @@ const Dashboard = ({ onLogout }) => {
                           </div>
                           <datalist id="equipment-names-edit">{typeSuggestions.map(t => <option key={t} value={t} />)}</datalist>
                         </td>
-                        <td style={{ padding: '8px' }}><input type="number" min="1" max={item.quantity} value={editFormData.quantity} onKeyDown={(e) => { if (['e', 'E', '+', '-', '.', ','].includes(e.key)) e.preventDefault(); }} onChange={(e) => { const cleanVal = e.target.value.replace(/[^0-9]/g, ''); setEditFormData(prev => ({ ...prev, quantity: cleanVal })); }} style={{ width: '50px', padding: '4px' }} title={`Fraccionar lote. Original: ${item.quantity}`} /></td>
+                        <td style={{ padding: '8px' }}><input type="number" min="1" value={editFormData.quantity} onKeyDown={(e) => { if (['e', 'E', '+', '-', '.', ','].includes(e.key)) e.preventDefault(); }} onChange={(e) => { const cleanVal = e.target.value.replace(/[^0-9]/g, ''); setEditFormData(prev => ({ ...prev, quantity: cleanVal })); }} style={{ width: '50px', padding: '4px' }} title={`Fraccionar lote. Original: ${item.quantity}`} /></td>
                         <td style={{ padding: '8px' }}>
                           {/* Cambiar de terminal ahora significa trasladarlo/prestarlo */}
                           <select value={editFormData.terminal} onChange={(e) => handleEditFormChange(e, 'terminal')}>
@@ -1504,7 +1661,11 @@ const Dashboard = ({ onLogout }) => {
                                 onChange={(e) => setEditFormData(prev => ({ ...prev, baseWarehouse: e.target.value }))}
                                 style={{ fontSize: '10px', padding: '2px', borderRadius: '3px', border: '1px solid #ccc' }}
                               >
-                                {(WAREHOUSES_DATA[editFormData.terminal] || []).map(w => (
+                                {/* Almacén Base = almacén de la terminal propietaria; no cambia al prestar */}
+                                {editFormData.baseWarehouse && !(WAREHOUSES_DATA[ownerOf(editFormData)] || []).some(w => w.name === editFormData.baseWarehouse) && (
+                                  <option value={editFormData.baseWarehouse}>{editFormData.baseWarehouse}</option>
+                                )}
+                                {(WAREHOUSES_DATA[ownerOf(editFormData)] || []).map(w => (
                                   <option key={w.name} value={w.name}>{w.name}</option>
                                 ))}
                               </select>
@@ -1519,7 +1680,7 @@ const Dashboard = ({ onLogout }) => {
                         <td style={{ padding: '8px', textAlign: 'center', display: 'flex', gap: '5px', justifyContent: 'center', alignItems: 'center' }}>
                           <button onClick={() => handleSaveEdit(item.id)} className="btn-ok">OK</button>
                           <button onClick={handleCancelEdit} className="btn-cancel">X</button>
-                          <button onClick={() => setItemToDelete(item)} style={{ padding: '6px', background: '#C10015', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                          <button onClick={() => setItemToDelete(item)} title="Eliminar Equipo" aria-label="Eliminar equipo" style={{ padding: '6px', background: '#C10015', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
                             <Trash2 size={16} />
                           </button>
                         </td>
@@ -1572,12 +1733,8 @@ const Dashboard = ({ onLogout }) => {
                         <td style={{ padding: '12px' }}>
                           <span style={{ 
                             padding: '4px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: '500',
-                            backgroundColor: item.status.startsWith('En uso') ? '#E8F5E9' : 
-                                             item.status.startsWith('Dañado') ? '#FFEBEE' :
-                                             item.status.startsWith('Decomisado') ? '#F5F5F5' : '#FFF8E1',
-                            color: item.status.startsWith('En uso') ? '#2E7D32' : 
-                                   item.status.startsWith('Dañado') ? '#C62828' :
-                                   item.status.startsWith('Decomisado') ? '#616161' : '#F57F17',
+                            backgroundColor: badgeStyle(item.status).bg,
+                            color: badgeStyle(item.status).fg,
                             border: '1px solid transparent'
                           }}>
                             {item.status}
@@ -1587,13 +1744,13 @@ const Dashboard = ({ onLogout }) => {
                           <button onClick={() => handleEditClick(item)} className="btn-edit">
                             EDITAR
                           </button>
-                          <button onClick={() => handleCloneItem(item)} title="Duplicar Equipo" style={{ padding: '6px', background: '#e3f2fd', color: '#1565c0', border: 'none', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                          <button onClick={() => handleCloneItem(item)} title="Duplicar Equipo" aria-label="Duplicar equipo" style={{ padding: '6px', background: '#e3f2fd', color: '#1565c0', border: 'none', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
                             <Copy size={16} />
                           </button>
-                          <button onClick={() => setHistoryModalItem(item)} title="Ver Historial" style={{ padding: '6px', background: '#fff3e0', color: '#ef6c00', border: 'none', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                          <button onClick={() => setHistoryModalItem(item)} title="Ver Historial" aria-label="Ver historial" style={{ padding: '6px', background: '#fff3e0', color: '#ef6c00', border: 'none', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
                             <Clock size={16} />
                           </button>
-                          <button onClick={() => handleShareAsCard(item)} title="Compartir Ticket" style={{ padding: '6px', background: '#e8f5e9', color: '#2e7d32', border: 'none', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                          <button onClick={() => handleShareAsCard(item)} title="Compartir Ticket" aria-label="Compartir ticket" style={{ padding: '6px', background: '#e8f5e9', color: '#2e7d32', border: 'none', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
                             <Share2 size={16} />
                           </button>
                         </td>
@@ -1601,7 +1758,7 @@ const Dashboard = ({ onLogout }) => {
                     )}
                   </tr>
                 ))}
-                {filteredInventory.length === 0 && (
+                {tableRows.length === 0 && (
                   <tr>
                     <td colSpan="6" style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)' }}>No hay equipos que coincidan con estos filtros.</td>
                   </tr>
@@ -1619,10 +1776,10 @@ const Dashboard = ({ onLogout }) => {
           display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px',
           backdropFilter: 'blur(3px)'
         }}>
-          <div className="material-card" style={{ padding: '30px', width: '100%', maxWidth: '500px', position: 'relative' }}>
+          <div className="material-card" role="dialog" aria-modal="true" aria-label="Registrar nuevo equipo" style={{ padding: '30px', width: '100%', maxWidth: '500px', position: 'relative' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
                <h3 style={{ margin: 0, color: 'var(--q-dark)' }}>Registrar Nuevo Equipo</h3>
-               <button onClick={() => setIsAddModalOpen(false)} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#999' }}>✖</button>
+               <button onClick={() => setIsAddModalOpen(false)} aria-label="Cerrar" style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#999' }}>✖</button>
             </div>
             
             <form onSubmit={handleAddItem} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
@@ -1734,6 +1891,7 @@ const Dashboard = ({ onLogout }) => {
                             const compressedBase64 = await compressImage(file);
                             setNewItemImage(compressedBase64);
                           } catch (err) {
+                            console.error(err);
                             alert("Error al procesar la imagen");
                           }
                         }
@@ -1746,6 +1904,7 @@ const Dashboard = ({ onLogout }) => {
                       <button 
                         type="button" 
                         onClick={() => setNewItemImage(null)}
+                        aria-label="Quitar foto"
                         style={{ position: 'absolute', top: '-8px', right: '-8px', background: '#C10015', color: 'white', border: 'none', borderRadius: '50%', width: '18px', height: '18px', fontSize: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                       >✖</button>
                     </div>
@@ -1766,10 +1925,10 @@ const Dashboard = ({ onLogout }) => {
           backgroundColor: 'rgba(0,0,0,0.7)', zIndex: 3000, 
           display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' 
         }}>
-          <div className="material-card" style={{ padding: '30px', width: '100%', maxWidth: '500px', maxHeight: '80vh', overflowY: 'auto' }}>
+          <div className="material-card" role="dialog" aria-modal="true" aria-label="Bitácora de auditoría" style={{ padding: '30px', width: '100%', maxWidth: '500px', maxHeight: '80vh', overflowY: 'auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid #eee', paddingBottom: '10px', marginBottom: '20px' }}>
                <h3 style={{ margin: 0, color: 'var(--q-dark)' }}>Bitácora de Auditoría</h3>
-               <button onClick={() => setHistoryModalItem(null)} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#999' }}>✖</button>
+               <button onClick={() => setHistoryModalItem(null)} aria-label="Cerrar" style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#999' }}>✖</button>
             </div>
             
             <h4 style={{ color: 'var(--q-accent)', marginTop: 0 }}>{historyModalItem.name}</h4>
@@ -1801,7 +1960,7 @@ const Dashboard = ({ onLogout }) => {
           display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px',
           backdropFilter: 'blur(3px)'
         }}>
-          <div className="material-card" style={{ padding: '30px', width: '100%', maxWidth: '450px', textAlign: 'left', position: 'relative', borderTop: '4px solid #C10015' }}>
+          <div className="material-card" role="alertdialog" aria-modal="true" aria-label="Eliminar registro de equipo" style={{ padding: '30px', width: '100%', maxWidth: '450px', textAlign: 'left', position: 'relative', borderTop: '4px solid #C10015' }}>
             
             <h3 style={{ color: 'var(--q-dark)', margin: '0 0 15px 0', display: 'flex', alignItems: 'center', gap: '10px', fontSize: '18px' }}>
               <Trash2 color="#C10015" size={20} />
@@ -1844,7 +2003,7 @@ const Dashboard = ({ onLogout }) => {
       {/* Modal Centro de Actividades */}
       {isGlobalLogOpen && (
         <div className="modal-overlay" onClick={() => setIsGlobalLogOpen(false)}>
-          <div className="modal-content" style={{ padding: '20px', background: 'var(--card-bg)', borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '15px', minWidth: '600px', maxWidth: '95vw', maxHeight: '90vh' }} onClick={e => e.stopPropagation()}>
+          <div className="modal-content" role="dialog" aria-modal="true" aria-label="Centro de actividades" style={{ padding: '20px', background: 'var(--card-bg)', borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '15px', minWidth: '600px', maxWidth: '95vw', maxHeight: '90vh' }} onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center', borderBottom: '1px solid var(--q-secondary)', paddingBottom: '10px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <Activity size={24} color="var(--q-accent)" />
@@ -1853,16 +2012,16 @@ const Dashboard = ({ onLogout }) => {
               <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                 <button onClick={() => {
                   if(!globalLogs || globalLogs.length===0) return alert('No hay logs para exportar');
-                  const headers = ['Fecha', 'Usuario', 'Acción'];
-                  const csvRows = [headers.join(',')];
-                  globalLogs.forEach(l => csvRows.push(`"${l.date}","${l.user}","${l.action.replace(/"/g, '""')}"`));
-                  const blob = new Blob([csvRows.join('\n')], { type: 'text/csv' });
-                  const url = window.URL.createObjectURL(blob);
-                  const a = document.createElement('a'); a.href = url; a.download = 'auditoria_global.csv'; a.click();
+                  // Mismo formato y protección contra fórmulas que la exportación del inventario
+                  downloadCSV(
+                    ['Fecha', 'Usuario', 'Acción'],
+                    globalLogs.map(l => [formatLogDate(l.date), l.user, l.action]),
+                    'auditoria_global.csv'
+                  );
                 }} className="btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
                   <Download size={16} /> Exportar
                 </button>
-                <button onClick={() => setIsGlobalLogOpen(false)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '20px', color: 'var(--text-muted)' }}>✖</button>
+                <button onClick={() => setIsGlobalLogOpen(false)} aria-label="Cerrar" style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '20px', color: 'var(--text-muted)' }}>✖</button>
               </div>
             </div>
             
@@ -1870,7 +2029,7 @@ const Dashboard = ({ onLogout }) => {
               {globalLogs && globalLogs.length > 0 ? globalLogs.map(log => (
                 <div key={log.id} style={{ padding: '12px', borderLeft: '3px solid var(--q-accent)', background: 'var(--q-primary)', borderRadius: '0 4px 4px 0' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
-                    <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 'bold' }}>{log.date}</span>
+                    <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 'bold' }}>{formatLogDate(log.date)}</span>
                     <span style={{ fontSize: '12px', color: 'var(--q-info)', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>👤 {log.user}</span>
                   </div>
                   <p style={{ margin: 0, fontSize: '14px', color: 'var(--text-main)' }}>{log.action}</p>
@@ -1941,64 +2100,13 @@ const Dashboard = ({ onLogout }) => {
         </div>
       )}
       
-      {shareItemView && (
-        <div className="modal-overlay" style={{ background: 'rgba(255,255,255,0.95)' }}>
-          <div className="material-card" style={{ padding: '30px', width: '100%', maxWidth: '600px', display: 'flex', flexDirection: 'column', gap: '20px', position: 'relative' }}>
-            <button onClick={() => setShareItemView(null)} style={{ position: 'absolute', top: '15px', right: '15px', background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '24px', color: 'var(--text-muted)' }}>✖</button>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '20px', borderBottom: '2px solid var(--q-secondary)', paddingBottom: '20px' }}>
-              <img src="/logo-app.png" alt="Logo" style={{ height: '40px', objectFit: 'contain' }} />
-              <div>
-                <h2 style={{ margin: 0, color: 'var(--q-dark)' }}>Ficha de Equipo</h2>
-                <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '14px' }}>ID: {shareItemView.id}</p>
-              </div>
-            </div>
-            
-            <div style={{ display: 'flex', gap: '20px' }}>
-              {shareItemView.image ? (
-                <img src={shareItemView.image} alt="Equipo" style={{ width: '150px', height: '150px', objectFit: 'cover', borderRadius: '8px', border: '1px solid #eee' }} />
-              ) : (
-                <div style={{ width: '150px', height: '150px', background: '#f5f5f5', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ccc' }}>Sin foto</div>
-              )}
-              
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                <h3 style={{ margin: 0, fontSize: '24px', color: 'var(--q-accent)' }}>{shareItemView.name}</h3>
-                {shareItemView.isFixedAsset && (
-                  <span style={{ background: 'var(--q-primary)', padding: '4px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold', display: 'inline-block', alignSelf: 'flex-start' }}>ACTIVO # {shareItemView.assetNumber}</span>
-                )}
-                
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginTop: '10px' }}>
-                  <div>
-                    <label style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Ubicación</label>
-                    <div style={{ fontSize: '15px', fontWeight: '500' }}>{shareItemView.terminal}</div>
-                  </div>
-                  <div>
-                    <label style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Área</label>
-                    <div style={{ fontSize: '15px', fontWeight: '500' }}>{shareItemView.area}</div>
-                  </div>
-                  <div>
-                    <label style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Estado</label>
-                    <div style={{ fontSize: '15px', fontWeight: 'bold', color: 'var(--q-info)' }}>{shareItemView.status}</div>
-                  </div>
-                  <div>
-                    <label style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Propiedad de</label>
-                    <div style={{ fontSize: '15px', fontWeight: '500' }}>{shareItemView.ownerTerminal || shareItemView.terminal}</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-            
-            <p style={{ textAlign: 'center', fontSize: '12px', color: 'var(--text-muted)', margin: 0, marginTop: '20px' }}>Vista generada por Stock Terminal - Acceso de Sólo Lectura</p>
-          </div>
-        </div>
-      )}
-
       {/* Modal Visor de Imagen (Amazon Style) */}
       {selectedImage && (
         <div className="modal-overlay" onClick={() => setSelectedImage(null)}>
-          <div className="modal-content" style={{ padding: '20px', background: 'var(--card-bg)', borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '15px', minWidth: '400px', maxWidth: '95vw', maxHeight: '90vh' }} onClick={e => e.stopPropagation()}>
+          <div className="modal-content" role="dialog" aria-modal="true" aria-label="Fotos del equipo" style={{ padding: '20px', background: 'var(--card-bg)', borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '15px', minWidth: '400px', maxWidth: '95vw', maxHeight: '90vh' }} onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
               <h3 style={{ margin: 0, color: 'var(--q-dark)' }}>{selectedImage.name}</h3>
-              <button onClick={() => setSelectedImage(null)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '20px', color: 'var(--text-muted)' }}>✖</button>
+              <button onClick={() => setSelectedImage(null)} aria-label="Cerrar" style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '20px', color: 'var(--text-muted)' }}>✖</button>
             </div>
             
             <div style={{ display: 'flex', gap: '20px', height: '100%', overflow: 'hidden' }}>
@@ -2029,6 +2137,7 @@ const Dashboard = ({ onLogout }) => {
                      onClick={() => handleDeletePhoto(selectedImage.images ? selectedImage.images[activePhotoIdx].data : selectedImage.image)}
                      style={{ background: 'var(--q-negative)', color: 'white', border: 'none', borderRadius: '4px', padding: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 5px rgba(0,0,0,0.2)' }}
                      title="Eliminar Foto"
+                     aria-label="Eliminar foto"
                    >
                      <Trash2 size={16} />
                    </button>
@@ -2037,7 +2146,7 @@ const Dashboard = ({ onLogout }) => {
                      title="Cambiar Foto"
                    >
                      <RefreshCw size={16} />
-                     <input type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => handleReplacePhoto(e, selectedImage.images ? selectedImage.images[activePhotoIdx].data : selectedImage.image)} />
+                     <input type="file" accept="image/*" aria-label="Cambiar foto" style={{ display: 'none' }} onChange={(e) => handleReplacePhoto(e, selectedImage.images ? selectedImage.images[activePhotoIdx].data : selectedImage.image)} />
                    </label>
                  </div>
                  <img src={selectedImage.images ? selectedImage.images[activePhotoIdx].data : selectedImage.image} alt="Ampliada" style={{ maxWidth: '100%', maxHeight: '70vh', objectFit: 'contain' }} />

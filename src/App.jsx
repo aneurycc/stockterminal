@@ -6,8 +6,10 @@ import Dashboard from './pages/Dashboard';
 
 function App() {
   // Persistir la autenticación en localStorage para que no se cierre sesión al recargar
+  // Una sesión sin nombre de operador (abierta con una versión anterior) vuelve al login,
+  // para que la bitácora siempre registre quién opera.
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
-    return localStorage.getItem('gpc_auth') === 'true';
+    return localStorage.getItem('gpc_auth') === 'true' && !!localStorage.getItem('gpc_operator');
   });
 
   // Guardar en localStorage cada vez que cambie
@@ -31,7 +33,7 @@ function App() {
           path="/dashboard" 
           element={
             <PrivateRoute isAuthenticated={isAuthenticated}>
-              <Dashboard onLogout={() => { localStorage.removeItem('gpc_user'); setIsAuthenticated(false); }} />
+              <Dashboard onLogout={() => { localStorage.removeItem('gpc_user'); localStorage.removeItem('gpc_operator'); setIsAuthenticated(false); }} />
             </PrivateRoute>
           } 
         />
