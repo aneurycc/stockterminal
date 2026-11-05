@@ -72,6 +72,53 @@ const getAreasForTerminal = (term, status) => {
   return getOperationalAreas(term);
 };
 
+// --- Helpers de normalización (importación y validaciones) ---
+// Minúsculas, sin tildes y con espacios simples, para comparar texto escrito a mano.
+const norm = (s) => String(s ?? '')
+  .normalize('NFD').replace(/[̀-ͯ]/g, '')
+  .toLowerCase().replace(/[.\-_]/g, ' ').replace(/\s+/g, ' ').trim();
+
+// Devuelve la opción oficial que coincide con 'raw' (ignorando tildes y mayúsculas), o null.
+const matchOption = (raw, options) => {
+  const n = norm(raw);
+  if (!n) return null;
+  return options.find(o => norm(o) === n) || null;
+};
+
+const TERMINAL_ALIASES = {
+  'ta': 'Terminal A', 'a': 'Terminal A', 'term a': 'Terminal A', 't a': 'Terminal A',
+  'tb': 'Terminal B', 'b': 'Terminal B', 'term b': 'Terminal B', 't b': 'Terminal B',
+  'tb2': 'Terminal B2', 'b2': 'Terminal B2', 'term b2': 'Terminal B2', 't b2': 'Terminal B2', 'terminal b 2': 'Terminal B2', 'tb 2': 'Terminal B2',
+};
+const matchTerminal = (raw) => matchOption(raw, TERMINAL_OPTIONS) || TERMINAL_ALIASES[norm(raw)] || null;
+
+// Número de Activo Fijo canónico: sin espacios a los lados y en mayúsculas.
+const normalizeAsset = (s) => String(s ?? '').trim().toUpperCase();
+
+// Propietario efectivo de un registro.
+const ownerOf = (item) => item.ownerTerminal || item.terminal;
+
+// Dos registros solo se consolidan si son el mismo tipo de equipo, en el mismo sitio,
+// con el mismo estado y del MISMO propietario (no se mezclan préstamos con stock propio).
+// Nunca se consolida con un borrador de clonado sin guardar (puede venir de otra pestaña).
+const canConsolidate = (a, b) =>
+  !a.isDraft && !b.isDraft &&
+  !a.isFixedAsset && !b.isFixedAsset &&
+  (a.name || '').trim().toLowerCase() === (b.name || '').trim().toLowerCase() &&
+  a.terminal === b.terminal &&
+  a.area === b.area &&
+  a.status === b.status &&
+  ownerOf(a) === ownerOf(b);
+
+// Añade una foto suelta (campo 'image' antiguo) a la galería si no está ya incluida.
+const withLegacyImage = (item, dateLabel = 'Registro Original') => {
+  const images = item.images || [];
+  if (item.image && !images.find(img => img.data === item.image)) {
+    return [...images, { data: item.image, status: item.status, date: dateLabel }];
+  }
+  return images;
+};
+
 // Colores Semánticos GPC Material
 const STATUS_COLORS = { 'En uso': '#21BA45', 'En Almacén': '#3498db', 'Inhabilitado': '#e74c3c', 'Decomisado': '#7f8c8d', 'Por decomisar': '#f1c40f', 'En reparación': '#9b59b6', 'Terminal A': '#1abc9c', 'Terminal B': '#e67e22', 'Terminal B2': '#9b59b6' };
 
@@ -288,13 +335,35 @@ const Dashboard = ({ onLogout }) => {
       return;
     }
 
+    // Los CSV se decodifican a texto: UTF-8 si es válido; si no, Windows-1252 (el "CSV" por defecto de Excel en español).
+    // Así no se rompen las tildes, traiga o no BOM el archivo.
+    const isCSV = /\.csv$/i.test(file.name);
+    const decodeCSV = (buffer) => {
+      const b = new Uint8Array(buffer, 0, Math.min(2, buffer.byteLength));
+      if (b[0] === 0xFF && b[1] === 0xFE) return new TextDecoder('utf-16le').decode(buffer);
+      if (b[0] === 0xFE && b[1] === 0xFF) return new TextDecoder('utf-16be').decode(buffer);
+      try {
+        return new TextDecoder('utf-8', { fatal: true }).decode(buffer);
+      } catch {
+        return new TextDecoder('windows-1252').decode(buffer);
+      }
+    };
+    // Un .xlsx (ZIP, "PK") o .xls antiguo (D0 CF) renombrado a .csv se lee como libro, no como texto
+    const looksLikeWorkbook = (buffer) => {
+      const b = new Uint8Array(buffer, 0, Math.min(2, buffer.byteLength));
+      return (b[0] === 0x50 && b[1] === 0x4B) || (b[0] === 0xD0 && b[1] === 0xCF);
+    };
     const reader = new FileReader();
     reader.onload = (evt) => {
       try {
-        const dataBuffer = evt.target.result;
-        const wb = XLSX.read(dataBuffer, { type: 'array' });
+        const data = evt.target.result;
+        const wb = (isCSV && !looksLikeWorkbook(data))
+          // raw:true en CSV: cada celda se conserva como texto (no se pierden ceros a la izquierda como "0012")
+          ? XLSX.read(decodeCSV(data).replace(/^\uFEFF/, ''), { type: 'string', raw: true })
+          : XLSX.read(data, { type: 'array' });
         const wsname = wb.SheetNames[0];
         const ws = wb.Sheets[wsname];
+        // Valores reales de las celdas (no el texto formateado: evita "1.23457E+11" o "1,500")
         const rawJson = XLSX.utils.sheet_to_json(ws, { defval: '' });
 
         if (!rawJson || rawJson.length === 0) {
@@ -323,7 +392,12 @@ const Dashboard = ({ onLogout }) => {
           return '';
         };
 
+        const warnings = [];
+        const seenAssets = new Set();
+        const existingAssets = new Set(inventory.filter(i => i.isFixedAsset && i.assetNumber).map(i => normalizeAsset(i.assetNumber)));
+
         rawJson.forEach((row, index) => {
+          const rowNum = index + 2; // fila 1 = encabezados
           // If CSV single-column key detected (e.g., "Nombre;Terminal;Area...")
           let parsedRow = { ...row };
           const rowKeys = Object.keys(row);
@@ -338,39 +412,73 @@ const Dashboard = ({ onLogout }) => {
 
           const rawName = getVal(parsedRow, ['Nombre', 'Equipo', 'Articulo', 'Artículo', 'Item', 'Name', 'Descripción', 'Producto']);
           const name = rawName || `Equipo Genérico ${index + 1}`;
+          if (!rawName) warnings.push(`Fila ${rowNum}: sin nombre → "${name}".`);
 
           const rawTerminal = getVal(parsedRow, ['Terminal', 'Ubicacion', 'Ubicación', 'Posicion', 'Posición', 'Location']);
-          const terminal = TERMINAL_OPTIONS.includes(rawTerminal) ? rawTerminal : 'Terminal A';
+          let terminal = matchTerminal(rawTerminal);
+          if (!terminal) {
+            terminal = 'Terminal A';
+            warnings.push(`Fila ${rowNum}: terminal "${rawTerminal}" no reconocida → Terminal A.`);
+          }
 
-          const areaOptions = getAvailableAreas(terminal);
+          const termWarehouseNames = (WAREHOUSES_DATA[terminal] || []).map(w => w.name);
           const rawArea = getVal(parsedRow, ['Area', 'Área', 'Zona', 'Lugar']);
-          const area = areaOptions.includes(rawArea) ? rawArea : areaOptions[0];
-
           const rawStatus = getVal(parsedRow, ['Estado', 'Status', 'Condicion', 'Condición']);
-          const status = STATUS_OPTIONS.includes(rawStatus) ? rawStatus : 'En uso';
+
+          // El estado se resuelve ANTES que el área: los equipos "En Almacén" se validan contra almacenes.
+          let status = matchOption(rawStatus, STATUS_OPTIONS);
+          const areaIsWarehouse = !!matchOption(rawArea, termWarehouseNames);
+          if (!status) {
+            status = areaIsWarehouse ? 'En Almacén' : 'En uso';
+            if (rawStatus) warnings.push(`Fila ${rowNum}: estado "${rawStatus}" no reconocido → ${status}.`);
+            else if (areaIsWarehouse) warnings.push(`Fila ${rowNum}: sin estado; el área es un almacén → En Almacén.`);
+          }
+
+          const areaOptions = getAvailableAreas(terminal, status);
+          let area = matchOption(rawArea, areaOptions);
+          if (!area && !rawArea && status === 'En Almacén') {
+            // Sin área pero con Almacén Base válido: el equipo está en su almacén base
+            const rawBase = getVal(parsedRow, ['Almacen Base', 'Almacén Base', 'Base Warehouse', 'BaseWarehouse', 'Almacen Custodia', 'Almacén Custodia', 'Almacen', 'Almacén']);
+            area = matchOption(rawBase, areaOptions);
+          }
+          if (!area) {
+            area = areaOptions[0];
+            warnings.push(`Fila ${rowNum}: área "${rawArea}" no válida para ${terminal} (${status}) → ${area}.`);
+          }
 
           const rawQty = getVal(parsedRow, ['Cantidad', 'Cant', 'Qty', 'Quantity', 'Unidades', 'Stock']);
-          const qtyParsed = parseInt(rawQty, 10);
+          // Entero positivo; se aceptan separadores de miles ("1,500" / "1.500")
+          const qtyText = /^\d{1,3}([.,]\d{3})+$/.test(rawQty) ? rawQty.replace(/[.,]/g, '') : rawQty;
+          const qtyParsed = /^\d+$/.test(qtyText) ? parseInt(qtyText, 10) : NaN;
           const quantity = (!isNaN(qtyParsed) && qtyParsed > 0) ? qtyParsed : 1;
+          if (rawQty && quantity !== qtyParsed) warnings.push(`Fila ${rowNum}: cantidad "${rawQty}" no es un entero positivo → 1.`);
 
-          const assetNum = getVal(parsedRow, ['Activo Fijo', 'Activo', 'Asset', 'Num Activo', '# Activo', 'Nro Activo', 'Codigo Activo']);
-          
-                    const rawOwner = getVal(parsedRow, ['Propietario', 'Owner', 'Dueño', 'Dueno']);
-          const ownerTerminal = (TERMINAL_OPTIONS.includes(rawOwner)) ? rawOwner : terminal;
+          const assetNum = normalizeAsset(getVal(parsedRow, ['Activo Fijo', 'Activo', 'Asset', 'Num Activo', '# Activo', 'Nro Activo', 'Codigo Activo']));
 
-          // Mapeo de Almacén Base (Base Warehouse)
-          const termWarehouses = WAREHOUSES_DATA[terminal] || [];
-          const defaultWh = termWarehouses.length > 0 ? termWarehouses[0].name : '';
+          const rawOwner = getVal(parsedRow, ['Propietario', 'Owner', 'Dueño', 'Dueno']);
+          let ownerTerminal = matchTerminal(rawOwner);
+          if (!ownerTerminal) {
+            ownerTerminal = terminal;
+            if (rawOwner) warnings.push(`Fila ${rowNum}: propietario "${rawOwner}" no reconocido → ${terminal}.`);
+          }
+
+          // Almacén Base: debe ser un almacén oficial de la terminal.
+          const defaultWh = termWarehouseNames[0] || '';
           const rawBaseWh = getVal(parsedRow, ['Almacen Base', 'Almacén Base', 'Base Warehouse', 'BaseWarehouse', 'Almacen Custodia', 'Almacén Custodia', 'Almacen', 'Almacén']);
-          const baseWarehouse = rawBaseWh || (status === 'En Almacén' ? area : defaultWh);
+          let baseWarehouse = matchOption(rawBaseWh, termWarehouseNames);
+          if (!baseWarehouse) {
+            baseWarehouse = status === 'En Almacén' ? area : defaultWh;
+            if (rawBaseWh) warnings.push(`Fila ${rowNum}: almacén base "${rawBaseWh}" no existe en ${terminal} → ${baseWarehouse}.`);
+          }
 
-          // Duplicate Asset Number validation
+          // Activo Fijo duplicado: contra el inventario y contra las filas anteriores del mismo archivo
           if (assetNum.length > 0) {
-            const isDuplicate = inventory.some(i => i.isFixedAsset && i.assetNumber.toLowerCase() === assetNum.toLowerCase());
-            if (isDuplicate) {
+            if (existingAssets.has(assetNum) || seenAssets.has(assetNum)) {
               skippedCount++;
+              warnings.push(`Fila ${rowNum}: Activo Fijo ${assetNum} duplicado → fila omitida.`);
               return;
             }
+            seenAssets.add(assetNum);
           }
 
           newItems.push({
@@ -389,22 +497,31 @@ const Dashboard = ({ onLogout }) => {
           });
         });
 
-        if (newItems.length > 0) {
-          setInventory([...inventory, ...newItems]);
-          let successMsg = `Importación masiva: Se cargaron ${newItems.length} equipos desde Excel/CSV.`;
-          if (skippedCount > 0) successMsg += ` (Se omitieron ${skippedCount} equipos por tener Activo Fijo duplicado).`;
-          addGlobalLog(currentUser, successMsg);
+        if (newItems.length === 0) {
+          alert(skippedCount > 0
+            ? `No se agregó ningún equipo. Se omitieron ${skippedCount} filas por tener un número de Activo Fijo duplicado.`
+            : "El archivo no contenía datos válidos.");
+          return;
+        }
 
-          let alertMsg = `Archivo cargado exitosamente.\n✅ Se agregaron ${newItems.length} equipos.`;
-          if (skippedCount > 0) alertMsg += `\n⚠️ Se omitieron ${skippedCount} equipos porque su número de Activo Fijo ya existe en el inventario.`;
-          alert(alertMsg);
-        } else {
-          if (skippedCount > 0) {
-            alert(`No se agregó ningún equipo. Se omitieron ${skippedCount} equipos porque sus números de Activo Fijo ya existen en el sistema.`);
-          } else {
-            alert("El archivo no contenía datos válidos.");
+        // Si hubo correcciones, mostrarlas y pedir confirmación antes de cargar
+        if (warnings.length > 0) {
+          const shown = warnings.slice(0, 15).join('\n');
+          const more = warnings.length > 15 ? `\n…y ${warnings.length - 15} avisos más.` : '';
+          if (!window.confirm(`Se encontraron ${warnings.length} correcciones o filas omitidas:\n\n${shown}${more}\n\n¿Importar ${newItems.length} equipos de todas formas?`)) {
+            return;
           }
         }
+
+        setInventory(prev => [...prev, ...newItems]);
+        let successMsg = `Importación masiva: Se cargaron ${newItems.length} equipos desde Excel/CSV.`;
+        if (skippedCount > 0) successMsg += ` (Se omitieron ${skippedCount} filas por Activo Fijo duplicado).`;
+        if (warnings.length > 0) successMsg += ` ${warnings.length} avisos de corrección.`;
+        addGlobalLog(currentUser, successMsg);
+
+        let alertMsg = `Archivo cargado exitosamente.\n✅ Se agregaron ${newItems.length} equipos.`;
+        if (skippedCount > 0) alertMsg += `\n⚠️ Se omitieron ${skippedCount} filas porque su número de Activo Fijo ya existe.`;
+        alert(alertMsg);
       } catch (err) {
         console.error(err);
         alert("Error al procesar el archivo Excel/CSV. Revisa que el formato sea correcto.");
@@ -425,17 +542,26 @@ const Dashboard = ({ onLogout }) => {
       let historyLog = `[${now}] Foto cambiada desde la galería.`;
       
       if (updatedItem.images) {
-        updatedItem.images = updatedItem.images.map(img => 
+        updatedItem.images = updatedItem.images.map(img =>
           img.data === oldPhotoData ? { ...img, data: compressedBase64, date: now } : img
         );
+        // La miniatura principal también debe apuntar a la foto nueva si era la reemplazada
+        if (updatedItem.image === oldPhotoData) updatedItem.image = compressedBase64;
       } else {
         updatedItem.image = compressedBase64;
       }
       
       updatedItem.history = [...(updatedItem.history || []), historyLog];
       
-      const newInventory = inventory.map(i => i.id === updatedItem.id ? updatedItem : i);
-      setInventory(newInventory);
+      // Aplicar el cambio sobre la versión ACTUAL del equipo (puede haber cambiado en otra pestaña)
+      setInventory(prev => prev.map(i => {
+        if (i.id !== updatedItem.id) return i;
+        const images = i.images
+          ? i.images.map(img => img.data === oldPhotoData ? { ...img, data: compressedBase64, date: now } : img)
+          : undefined;
+        const image = (!i.images || i.image === oldPhotoData) ? compressedBase64 : i.image;
+        return { ...i, images, image, history: [...(i.history || []), historyLog] };
+      }));
       setSelectedImage(updatedItem);
       addGlobalLog(currentUser, `Foto reemplazada para el equipo: ${updatedItem.name}.`);
     } catch (err) {
@@ -452,6 +578,10 @@ const Dashboard = ({ onLogout }) => {
 
     if (updatedItem.images && updatedItem.images.length > 1) {
       updatedItem.images = updatedItem.images.filter(img => img.data !== photoData);
+      // Si la miniatura principal era la foto borrada, pasa a ser la más reciente que queda
+      if (!updatedItem.images.some(img => img.data === updatedItem.image)) {
+        updatedItem.image = updatedItem.images[updatedItem.images.length - 1].data;
+      }
       setActivePhotoIdx(0);
     } else {
       updatedItem.image = null;
@@ -461,8 +591,18 @@ const Dashboard = ({ onLogout }) => {
     
     updatedItem.history = [...(updatedItem.history || []), historyLog];
     
-    const newInventory = inventory.map(i => i.id === updatedItem.id ? updatedItem : i);
-    setInventory(newInventory);
+    // Aplicar el borrado sobre la versión ACTUAL del equipo (puede haber cambiado en otra pestaña)
+    setInventory(prev => prev.map(i => {
+      if (i.id !== updatedItem.id) return i;
+      const remaining = (i.images || []).filter(img => img.data !== photoData);
+      if (remaining.length === 0) {
+        const next = { ...i, image: null, history: [...(i.history || []), historyLog] };
+        delete next.images;
+        return next;
+      }
+      const image = remaining.some(img => img.data === i.image) ? i.image : remaining[remaining.length - 1].data;
+      return { ...i, images: remaining, image, history: [...(i.history || []), historyLog] };
+    }));
     if (updatedItem.image || updatedItem.images) {
        setSelectedImage(updatedItem);
     }
@@ -479,8 +619,13 @@ const Dashboard = ({ onLogout }) => {
       return;
     }
 
-    if (newItemIsFixedAsset && newItemAssetNumber?.trim()) {
-      const duplicate = inventory.find(i => i.isFixedAsset && i.assetNumber === newItemAssetNumber.trim());
+    const newAssetNumber = normalizeAsset(newItemAssetNumber);
+    if (newItemIsFixedAsset) {
+      if (!newAssetNumber) {
+        alert("Indica el número de Activo Fijo o desmarca la casilla \"¿Activo Fijo?\".");
+        return;
+      }
+      const duplicate = inventory.find(i => i.isFixedAsset && normalizeAsset(i.assetNumber) === newAssetNumber);
       if (duplicate) {
         alert("Error: Ya existe otro equipo registrado con el mismo número de Activo Fijo (" + duplicate.name + ").");
         return;
@@ -501,7 +646,7 @@ const Dashboard = ({ onLogout }) => {
       area: finalNewArea,
       baseWarehouse: assignedWarehouse,
       isFixedAsset: newItemIsFixedAsset,
-      assetNumber: newItemIsFixedAsset ? newItemAssetNumber : '',
+      assetNumber: newItemIsFixedAsset ? newAssetNumber : '',
       quantity: qty,
       image: newItemImage,
       images: newItemImage ? [{ data: newItemImage, status: newItemStatus, date: now }] : undefined,
@@ -509,13 +654,7 @@ const Dashboard = ({ onLogout }) => {
     };
 
     // Consolidation check for new item if not fixed asset
-    const existingIndex = !newItem.isFixedAsset ? inventory.findIndex(i => 
-      !i.isFixedAsset &&
-      (i.name || '').trim().toLowerCase() === newItem.name.trim().toLowerCase() &&
-      i.terminal === newItem.terminal &&
-      i.area === newItem.area &&
-      i.status === newItem.status
-    ) : -1;
+    const existingIndex = inventory.findIndex(i => canConsolidate(i, newItem));
 
     if (existingIndex !== -1) {
       const consolidatedInventory = [...inventory];
@@ -561,14 +700,8 @@ const Dashboard = ({ onLogout }) => {
     }
   };
 
-  const handleEditClick = (item) => {
-    // Si estábamos editando otro item que era un borrador sin guardar (clon), lo eliminamos
-    if (editingId && editingId !== item.id) {
-      const prevEditingItem = inventory.find(i => i.id === editingId);
-      if (prevEditingItem && prevEditingItem.isDraft) {
-        setInventory(inventory.filter(i => i.id !== editingId));
-      }
-    }
+  // Abre la fila en modo edición (sin tocar el inventario)
+  const openEditor = (item) => {
     const whs = WAREHOUSES_DATA[item.terminal] || [];
     const defaultWh = whs.length > 0 ? whs[0].name : '';
     const resolvedBaseWh = item.baseWarehouse || (ALL_WAREHOUSE_NAMES.includes(item.area) ? item.area : defaultWh);
@@ -577,11 +710,28 @@ const Dashboard = ({ onLogout }) => {
     setEditFormData({ ...item, baseWarehouse: resolvedBaseWh });
     setEditNewImage(null);
   };
-  
+
+  // Id del borrador (clon sin guardar) que hay que descartar al cambiar de fila, o null
+  const draftToDiscard = (nextId) => {
+    if (!editingId || editingId === nextId) return null;
+    const prevEditingItem = inventory.find(i => i.id === editingId);
+    return prevEditingItem && prevEditingItem.isDraft ? editingId : null;
+  };
+
+  const handleEditClick = (item) => {
+    // Si estábamos editando otro item que era un borrador sin guardar (clon), lo eliminamos
+    const discardId = draftToDiscard(item.id);
+    if (discardId !== null) {
+      setInventory(prev => prev.filter(i => i.id !== discardId));
+    }
+    openEditor(item);
+  };
+
   const handleCancelEdit = () => {
     const currentItem = inventory.find(i => i.id === editingId);
     if (currentItem && currentItem.isDraft) {
-      setInventory(inventory.filter(i => i.id !== editingId));
+      const discardId = editingId;
+      setInventory(prev => prev.filter(i => i.id !== discardId));
     }
     setEditingId(null);
     setEditNewImage(null);
@@ -595,8 +745,13 @@ const Dashboard = ({ onLogout }) => {
       return;
     }
 
-    if (editFormData.isFixedAsset && editFormData.assetNumber?.trim()) {
-      const duplicate = inventory.find(i => String(i.id) !== String(id) && i.isFixedAsset && i.assetNumber === editFormData.assetNumber.trim());
+    const editAssetNumber = normalizeAsset(editFormData.assetNumber);
+    if (editFormData.isFixedAsset && !editAssetNumber) {
+      alert("Indica el número de Activo Fijo o desmarca la casilla \"Activo\".");
+      return;
+    }
+    if (editFormData.isFixedAsset) {
+      const duplicate = inventory.find(i => String(i.id) !== String(id) && i.isFixedAsset && normalizeAsset(i.assetNumber) === editAssetNumber);
       if (duplicate) {
         alert("Error: Ya existe otro equipo registrado con el mismo número de Activo Fijo (" + duplicate.name + ").");
         return;
@@ -618,11 +773,8 @@ const Dashboard = ({ onLogout }) => {
     
     // VALIDATION: Prevent uploading duplicate photo for the same status
     if (editNewImage) {
-      let existingImages = original.images || [];
-      if (original.image && !existingImages.find(img => img.data === original.image)) {
-        existingImages = [{ data: original.image, status: original.status }];
-      }
-      
+      const existingImages = withLegacyImage(original);
+
       const duplicateStatusImage = existingImages.find(img => img.status === editFormData.status);
       if (duplicateStatusImage) {
          alert("Ya existe una foto para este estado. Cambie el estado o elimine la foto anterior desde la galería.");
@@ -631,20 +783,28 @@ const Dashboard = ({ onLogout }) => {
     }
 
     const qtyDelta = original.quantity - parsedQty;
-        const hasDestinationChanged = original.status !== editFormData.status || original.area !== finalArea || original.terminal !== editFormData.terminal;
+    const hasDestinationChanged = original.status !== editFormData.status || original.area !== finalArea || original.terminal !== editFormData.terminal;
+
+    // Un número de Activo Fijo identifica una unidad concreta: no se puede repartir entre dos registros.
+    if (original.isFixedAsset && qtyDelta > 0 && hasDestinationChanged && !original.isDraft) {
+      alert("Un Activo Fijo no se puede fraccionar: mueve el registro completo (misma cantidad) o regístralo por unidades con su propio número.");
+      return;
+    }
 
     let historyLog = `[${now}] Editado. `;
     if (original.status !== editFormData.status) historyLog += `Estado cambió de "${original.status}" a "${editFormData.status}". `;
     if (original.area !== finalArea) historyLog += `Ubicación cambió de "${original.area}" a "${finalArea}". `;
     
     // CORRECCIÓN TYPO PROPIETARIO: Si cambia de terminal y solo tiene 1 registro histórico (el inicial), fue un error de registro.
-    let newOwner = original.owner;
+    // Un fraccionamiento NUNCA es una corrección de registro (parte del stock se queda en el origen): es un préstamo.
+    const isSplit = qtyDelta > 0 && !original.isDraft && hasDestinationChanged;
+    let newOwner = ownerOf(original);
     if (original.terminal !== editFormData.terminal) {
-       if (original.history && original.history.length === 1 && original.owner === original.terminal) {
+       if (!isSplit && original.history && original.history.length === 1 && ownerOf(original) === original.terminal) {
          newOwner = editFormData.terminal;
          historyLog += `Corrección de registro: Transferido permanentemente a ${editFormData.terminal}. `;
        } else {
-         historyLog += `Trasladado físicamente a ${editFormData.terminal} (Mantiene propiedad original de ${original.owner}). `;
+         historyLog += `Trasladado físicamente a ${editFormData.terminal} (Mantiene propiedad original de ${newOwner}). `;
        }
     }
 
@@ -657,16 +817,15 @@ const Dashboard = ({ onLogout }) => {
     setFilterStatus('Todos');
     setShowTextFilters(false);
 
-    if (qtyDelta > 0 && !original.isDraft && hasDestinationChanged) {
+    if (isSplit) {
       // ERP Splitting Logic: El remanente (qtyDelta) se queda en el estado/ubicación original, y la nueva cantidad (parsedQty) pasa al nuevo estado/ubicación
-      let parentImages = original.images || [];
-      if (original.image && !parentImages.find(img => img.data === original.image)) {
-        parentImages = [{ data: original.image, status: original.status, date: 'Registro Original' }];
-      }
+      const parentImages = withLegacyImage(original);
       
       const parentRemain = {
         ...original,
-        baseWarehouse: resolvedBaseWarehouse,
+        // El remanente no se mueve: conserva su propio almacén base (no el de la terminal destino)
+        baseWarehouse: original.baseWarehouse
+          || (ALL_WAREHOUSE_NAMES.includes(original.area) ? original.area : ((WAREHOUSES_DATA[original.terminal] || [])[0]?.name || '')),
         quantity: qtyDelta,
         images: parentImages.length > 0 ? parentImages : undefined,
         history: [...(original.history || []), `[${now}] Fraccionamiento: ${parsedQty} unidad(es) extraídas hacia "${finalArea}" (${editFormData.status}). Restan ${qtyDelta} en "${original.area}" (${original.status}).`]
@@ -680,35 +839,29 @@ const Dashboard = ({ onLogout }) => {
       const childSpawn = {
         ...editFormData,
         owner: newOwner,
+        ownerTerminal: newOwner,
         area: finalArea,
         baseWarehouse: resolvedBaseWarehouse,
         id: Date.now(),
         name: editFormData.name.trim(),
         isFixedAsset: editFormData.isFixedAsset,
-        assetNumber: editFormData.isFixedAsset ? editFormData.assetNumber : '',
+        assetNumber: editFormData.isFixedAsset ? editAssetNumber : '',
         quantity: parsedQty,
         image: editNewImage || original.image,
         images: childImages.length > 0 ? childImages : undefined,
-        history: [...(original.history || []), `[${now}] Extraído (${parsedQty} uds) desde "${original.area}" (${original.status}) hacia "${finalArea}" (${editFormData.status}).`]
+        history: [...(original.history || []), `[${now}] Extraído (${parsedQty} uds) desde "${original.area}" (${original.status}) hacia "${finalArea}" (${editFormData.status}).${original.terminal !== editFormData.terminal ? ` Trasladado físicamente a ${editFormData.terminal} (propiedad de ${newOwner}).` : ''}`]
       };
       
       delete childSpawn.isDraft;
 
       // Consolidation check for childSpawn
-      const existingMatch = !childSpawn.isFixedAsset ? inventory.find(i =>
-        String(i.id) !== String(id) &&
-        !i.isFixedAsset &&
-        i.name.trim().toLowerCase() === childSpawn.name.toLowerCase() &&
-        i.terminal === childSpawn.terminal &&
-        i.area === childSpawn.area &&
-        i.status === childSpawn.status
-      ) : null;
+      const existingMatch = inventory.find(i => String(i.id) !== String(id) && canConsolidate(i, childSpawn));
 
       if (existingMatch) {
         const consolidated = inventory.map(i => {
           if (String(i.id) === String(id)) return parentRemain;
           if (String(i.id) === String(existingMatch.id)) {
-            let mergedImages = i.images || [];
+            let mergedImages = withLegacyImage(i);
             if (childSpawn.images) {
               childSpawn.images.forEach(img => {
                 if (!mergedImages.find(m => m.data === img.data && m.status === img.status)) {
@@ -741,10 +894,7 @@ const Dashboard = ({ onLogout }) => {
         historyLog += `Cantidad modificada de ${original.quantity} a ${parsedQty}. `;
       }
       
-      let imagesArray = original.images || [];
-      if (original.image && !imagesArray.find(img => img.data === original.image)) {
-        imagesArray = [{ data: original.image, status: original.status, date: 'Registro Original' }];
-      }
+      let imagesArray = withLegacyImage(original);
       if (editNewImage) {
         imagesArray = [...imagesArray, { data: editNewImage, status: editFormData.status, date: now }];
         historyLog += '[Nueva Foto Adjunta] ';
@@ -753,11 +903,12 @@ const Dashboard = ({ onLogout }) => {
       const updated = {
         ...editFormData,
         owner: newOwner,
+        ownerTerminal: newOwner,
         area: finalArea,
         baseWarehouse: resolvedBaseWarehouse,
         name: editFormData.name.trim(),
         isFixedAsset: editFormData.isFixedAsset,
-        assetNumber: editFormData.isFixedAsset ? editFormData.assetNumber : '',
+        assetNumber: editFormData.isFixedAsset ? editAssetNumber : '',
         quantity: parsedQty,
         image: editNewImage || original.image,
         images: imagesArray.length > 0 ? imagesArray : undefined,
@@ -767,14 +918,7 @@ const Dashboard = ({ onLogout }) => {
       delete updated.isDraft;
 
       // Consolidation check for updated item
-      const existingMatch = !updated.isFixedAsset ? inventory.find(i =>
-        String(i.id) !== String(id) &&
-        !i.isFixedAsset &&
-        i.name.trim().toLowerCase() === updated.name.toLowerCase() &&
-        i.terminal === updated.terminal &&
-        i.area === updated.area &&
-        i.status === updated.status
-      ) : null;
+      const existingMatch = inventory.find(i => String(i.id) !== String(id) && canConsolidate(i, updated));
 
       if (existingMatch) {
         // Merge updated into existingMatch and remove row id
@@ -782,7 +926,7 @@ const Dashboard = ({ onLogout }) => {
           .filter(i => String(i.id) !== String(id))
           .map(i => {
             if (String(i.id) === String(existingMatch.id)) {
-              let mergedImages = i.images || [];
+              let mergedImages = withLegacyImage(i);
               if (updated.images) {
                 updated.images.forEach(img => {
                   if (!mergedImages.find(m => m.data === img.data && m.status === img.status)) {
@@ -890,8 +1034,11 @@ const Dashboard = ({ onLogout }) => {
     if (item.isFixedAsset) {
       cloned.history.push(`[${now}] Número de Activo Fijo limpiado automáticamente para evitar duplicidad.`);
     }
-    setInventory([...inventory, cloned]);
-    handleEditClick(cloned); 
+    // Una sola escritura: descartar el borrador anterior (si lo hay) y añadir el clon.
+    // Antes eran dos escrituras sobre el mismo inventario viejo y el clon nuevo se perdía.
+    const discardId = draftToDiscard(cloned.id);
+    setInventory(prev => [...prev.filter(i => i.id !== discardId), cloned]);
+    openEditor(cloned);
   };
 
   const handleEditFormChange = (e, field) => {
@@ -1024,8 +1171,8 @@ const Dashboard = ({ onLogout }) => {
   // KPI de Préstamos: ¿Cuántos equipos PROPIEDAD de la terminal actual (filtro) están ubicados físicamente en otra terminal?
   // Esto analiza todo el inventario base, no el inventario filtrado, para detectar equipos que salieron de su frontera.
   const prestadosItems = inventory.filter(i => {
-    const isOwnedByFilter = filterTerminal === 'Todas' ? true : i.owner === filterTerminal;
-    const isLoanedOut = i.owner && i.owner !== i.terminal; // Si la terminal actual es diferente al dueño, está prestado.
+    const isOwnedByFilter = filterTerminal === 'Todas' ? true : ownerOf(i) === filterTerminal;
+    const isLoanedOut = ownerOf(i) !== i.terminal; // Si la terminal actual es diferente al dueño, está prestado.
     return isOwnedByFilter && isLoanedOut;
   }).reduce((acc, curr) => acc + curr.quantity, 0);
 
